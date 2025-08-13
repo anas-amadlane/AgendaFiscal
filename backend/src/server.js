@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 // Import middleware
-const { apiRateLimiter, authRateLimiter } = require('./middleware/auth');
+const { apiRateLimiter, authRateLimiter, registrationRateLimiter } = require('./middleware/auth');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -16,6 +16,7 @@ const obligationRoutes = require('./routes/obligations');
 const dashboardRoutes = require('./routes/dashboard');
 const notificationRoutes = require('./routes/notifications');
 const invitationRoutes = require('./routes/invitations');
+const fiscalRoutes = require('./routes/fiscal');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -70,8 +71,8 @@ app.get('/health', (req, res) => {
 const apiVersion = process.env.API_VERSION || 'v1';
 const apiPrefix = `/api/${apiVersion}`;
 
-// Auth routes (with auth rate limiting)
-app.use(`${apiPrefix}/auth`, authRateLimiter, authRoutes);
+// Auth routes (rate limiting applied per route)
+app.use(`${apiPrefix}/auth`, authRoutes);
 
 // Protected routes
 app.use(`${apiPrefix}/users`, userRoutes);
@@ -80,6 +81,7 @@ app.use(`${apiPrefix}/obligations`, obligationRoutes);
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 app.use(`${apiPrefix}/notifications`, notificationRoutes);
 app.use(`${apiPrefix}/invitations`, invitationRoutes);
+app.use(`${apiPrefix}/fiscal`, fiscalRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

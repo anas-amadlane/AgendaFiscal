@@ -12,21 +12,31 @@ export default function LoginScreen() {
   const { login, isLoading, error, clearError } = useAuth();
 
   const handleLogin = async () => {
+    console.log('Login form submitted');
     if (!email || !password) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs');
       return;
     }
 
     try {
+      console.log('Calling login function with:', { email, password: '***' });
       await login({ email, password });
-      router.replace('/(tabs)');
+      console.log('Login successful, navigating to tabs');
+      
+      // Try different navigation methods
+      setTimeout(() => {
+        console.log('Attempting navigation after timeout');
+        router.replace('/(tabs)');
+      }, 100);
     } catch (err) {
+      console.error('Login form error:', err);
       // Error is handled by context
     }
   };
 
   React.useEffect(() => {
     if (error) {
+      console.log('Login error in UI:', error);
       Alert.alert('Erreur de connexion', error);
       clearError();
     }

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
-    role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'manager', 'agent', 'user')),
+    role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('manager', 'agent', 'user')),
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -27,6 +27,25 @@ CREATE TABLE IF NOT EXISTS companies (
     phone VARCHAR(20),
     email VARCHAR(255),
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Fiscal Calendar table for default calendar data
+CREATE TABLE IF NOT EXISTS fiscal_calendar (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    liste VARCHAR(100) NOT NULL,
+    categorie_personnes VARCHAR(100) NOT NULL,
+    sous_categorie VARCHAR(100),
+    mois VARCHAR(50),
+    type_impot VARCHAR(100) NOT NULL,
+    date_echeance DATE NOT NULL,
+    periode_declaration VARCHAR(100),
+    type_declaration VARCHAR(100),
+    formulaire VARCHAR(100),
+    lien VARCHAR(500),
+    commentaire TEXT,
+    is_tva_assujetti BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -124,6 +143,12 @@ CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
 CREATE INDEX IF NOT EXISTS idx_companies_tax_number ON companies(tax_number);
 CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status);
 
+CREATE INDEX IF NOT EXISTS idx_fiscal_calendar_categorie ON fiscal_calendar(categorie_personnes);
+CREATE INDEX IF NOT EXISTS idx_fiscal_calendar_sous_categorie ON fiscal_calendar(sous_categorie);
+CREATE INDEX IF NOT EXISTS idx_fiscal_calendar_type_impot ON fiscal_calendar(type_impot);
+CREATE INDEX IF NOT EXISTS idx_fiscal_calendar_date_echeance ON fiscal_calendar(date_echeance);
+CREATE INDEX IF NOT EXISTS idx_fiscal_calendar_is_tva_assujetti ON fiscal_calendar(is_tva_assujetti);
+
 CREATE INDEX IF NOT EXISTS idx_manager_agent_assignments_manager_id ON manager_agent_assignments(manager_id);
 CREATE INDEX IF NOT EXISTS idx_manager_agent_assignments_agent_id ON manager_agent_assignments(agent_id);
 
@@ -162,6 +187,9 @@ $$ language 'plpgsql';
 -- Create triggers for updated_at
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_companies_updated_at BEFORE UPDATE ON companies FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_fiscal_calendar_updated_at BEFORE UPDATE ON fiscal_calendar FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_fiscal_obligations_updated_at BEFORE UPDATE ON fiscal_obligations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_dashboard_configurations_updated_at BEFORE UPDATE ON dashboard_configurations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_user_sessions_updated_at BEFORE UPDATE ON user_sessions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 
+CREATE TRIGGER update_user_sessions_updated_at BEFORE UPDATE ON user_sessions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_audit_logs_updated_at BEFORE UPDATE ON audit_logs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_notifications_updated_at BEFORE UPDATE ON notifications FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 

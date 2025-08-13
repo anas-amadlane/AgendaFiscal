@@ -142,6 +142,12 @@ const authRateLimiter = createRateLimiter(
   'Trop de tentatives de connexion, veuillez réessayer dans 15 minutes'
 );
 
+const registrationRateLimiter = createRateLimiter(
+  15 * 60 * 1000, // 15 minutes
+  10, // 10 attempts
+  'Trop de tentatives d\'inscription, veuillez réessayer dans 15 minutes'
+);
+
 const apiRateLimiter = createRateLimiter(
   60 * 1000, // 1 minute
   100, // 100 requests
@@ -213,6 +219,7 @@ module.exports = {
   requireRole,
   requireManagerAccess,
   authRateLimiter,
+  registrationRateLimiter,
   apiRateLimiter,
   validateSession,
   auditLog

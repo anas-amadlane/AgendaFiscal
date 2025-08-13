@@ -8,6 +8,7 @@ import EnterpriseCard from '@/components/EnterpriseCard';
 import EnterpriseDetailsModal from '@/components/EnterpriseDetailsModal';
 import ExcelImportModal from '@/components/ExcelImportModal';
 import EnterpriseCalendarModal from '@/components/EnterpriseCalendarModal';
+import CompanyCreationModal from '@/components/CompanyCreationModal';
 import AppHeader from '@/components/AppHeader';
 import RoleSelectionModal from '@/components/RoleSelectionModal';
 import UserManagementModal from '@/components/UserManagementModal';
@@ -32,14 +33,6 @@ export default function Enterprises() {
   const [selectedEnterprise, setSelectedEnterprise] = useState<CompanyWithRole | Enterprise | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [loading, setLoading] = useState(false);
-  const [newEnterprise, setNewEnterprise] = useState<Partial<Enterprise>>({
-    raisonSociale: '',
-    identifiantFiscal: '',
-    formeJuridique: FormeJuridique.SARL,
-    regimeFiscal: RegimeFiscal.IS_TVA,
-    secteurActivite: '',
-    isActive: true
-  });
 
   useEffect(() => {
     if (user) {
@@ -56,17 +49,8 @@ export default function Enterprises() {
       setEnterprises(companies);
     } catch (error) {
       console.error('Error loading enterprises:', error);
-      // Fallback to mock data for now
-      setEnterprises(mockEnterprises.map(enterprise => ({
-        id: enterprise.id,
-        name: enterprise.raisonSociale,
-        registrationNumber: enterprise.identifiantFiscal,
-        status: enterprise.isActive ? 'active' : 'inactive',
-        userRole: UserRole.MANAGER,
-        userStatus: 'active',
-        createdAt: enterprise.dateCreation,
-        updatedAt: enterprise.dateCreation,
-      })));
+      // For new users, start with empty list
+      setEnterprises([]);
     } finally {
       setLoading(false);
     }
@@ -81,43 +65,10 @@ export default function Enterprises() {
     return matchesSearch && matchesFilter;
   });
 
-  const handleAddEnterprise = () => {
-    if (!newEnterprise.raisonSociale || !newEnterprise.identifiantFiscal) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires');
-      return;
-    }
-
-    // Show role selection modal instead of directly creating
-    setShowRoleSelectionModal(true);
-  };
-
-  const handleRoleSelected = async (role: UserRole, managerEmail?: string) => {
-    if (!newEnterprise.raisonSociale || !newEnterprise.identifiantFiscal) return;
-
+  const handleCompanyCreated = async (companyData: any) => {
     setLoading(true);
     try {
-      const companyData = {
-        name: newEnterprise.raisonSociale,
-        registrationNumber: newEnterprise.identifiantFiscal,
-        taxId: newEnterprise.identifiantFiscal,
-        industry: newEnterprise.secteurActivite,
-        userRole: role,
-        managerEmail: managerEmail,
-      };
-
       await RoleManagementService.createCompanyWithRole(companyData);
-      
-      setNewEnterprise({
-        raisonSociale: '',
-        identifiantFiscal: '',
-        formeJuridique: FormeJuridique.SARL,
-        regimeFiscal: RegimeFiscal.IS_TVA,
-        secteurActivite: '',
-        isActive: true
-      });
-      setShowAddModal(false);
-      setShowRoleSelectionModal(false);
-      
       Alert.alert('Succès', 'Entreprise créée avec succès');
       loadEnterprises();
     } catch (error) {
@@ -150,14 +101,7 @@ export default function Enterprises() {
   };
 
   const handleEditEnterprise = (enterprise: Enterprise) => {
-    setNewEnterprise({
-      raisonSociale: enterprise.raisonSociale,
-      identifiantFiscal: enterprise.identifiantFiscal,
-      formeJuridique: enterprise.formeJuridique,
-      regimeFiscal: enterprise.regimeFiscal,
-      secteurActivite: enterprise.secteurActivite,
-      isActive: enterprise.isActive,
-    });
+    setSelectedEnterprise(enterprise);
     setShowDetailsModal(false);
     setShowAddModal(true);
   };
@@ -233,7 +177,7 @@ export default function Enterprises() {
       />
 
       {/* Role-based actions */}
-      {user && (user.role === UserRole.MANAGER || user.role === UserRole.ADMIN) && (
+      {user && (user.role === UserRole.MANAGER) && (
         <View style={styles.roleActions}>
           <TouchableOpacity 
             style={styles.roleActionButton}
@@ -307,7 +251,12 @@ export default function Enterprises() {
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.enterprisesContainer}>
-          {filteredEnterprises.length === 0 ? (
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+              <Text style={styles.loadingText}>Chargement des entreprises...</Text>
+            </View>
+          ) : filteredEnterprises.length === 0 ? (
             <View style={styles.emptyState}>
               <View style={styles.emptyIconContainer}>
                 <Building2 size={32} color="#94A3B8" />
@@ -407,61 +356,12 @@ export default function Enterprises() {
         </View>
       </ScrollView>
 
-      {/* Add Enterprise Modal */}
-      <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet">
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              {newEnterprise.id ? 'Modifier l\'entreprise' : 'Ajouter une entreprise'}
-            </Text>
-            <TouchableOpacity onPress={() => setShowAddModal(false)}>
-              <Text style={styles.cancelButton}>Annuler</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Raison sociale *</Text>
-              <TextInput
-                style={styles.input}
-                value={newEnterprise.raisonSociale}
-                onChangeText={(text) => setNewEnterprise({...newEnterprise, raisonSociale: text})}
-                placeholder="Ex: SARL Mon Entreprise"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Identifiant fiscal *</Text>
-              <TextInput
-                style={styles.input}
-                value={newEnterprise.identifiantFiscal}
-                onChangeText={(text) => setNewEnterprise({...newEnterprise, identifiantFiscal: text})}
-                placeholder="Ex: 12345678"
-                keyboardType="numeric"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Secteur d'activité *</Text>
-              <TextInput
-                style={styles.input}
-                value={newEnterprise.secteurActivite}
-                onChangeText={(text) => setNewEnterprise({...newEnterprise, secteurActivite: text})}
-                placeholder="Ex: Commerce, Services, Industrie..."
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            <TouchableOpacity style={styles.saveButton} onPress={handleAddEnterprise}>
-              <Text style={styles.saveButtonText}>
-                {newEnterprise.id ? 'Modifier l\'entreprise' : 'Ajouter l\'entreprise'}
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+      {/* Company Creation Modal */}
+      <CompanyCreationModal
+        visible={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onCompanyCreated={handleCompanyCreated}
+      />
 
       {/* Enterprise Details Modal */}
       {selectedEnterprise && 'raisonSociale' in selectedEnterprise && (
@@ -495,8 +395,8 @@ export default function Enterprises() {
       <RoleSelectionModal
         visible={showRoleSelectionModal}
         onClose={() => setShowRoleSelectionModal(false)}
-        onRoleSelected={handleRoleSelected}
-        companyName={newEnterprise.raisonSociale || ''}
+        onRoleSelected={() => {}}
+        companyName=""
       />
 
       {/* User Management Modal */}

@@ -1,6 +1,6 @@
 const express = require('express');
 const { body } = require('express-validator');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, registrationRateLimiter } = require('../middleware/auth');
 const authController = require('../controllers/authController');
 
 const router = express.Router();
@@ -24,14 +24,9 @@ const validateRegistration = [
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage('Le nom doit contenir entre 2 et 50 caractères'),
-  body('company')
-    .optional()
-    .trim()
-    .isLength({ max: 255 })
-    .withMessage('Le nom de l\'entreprise ne peut pas dépasser 255 caractères'),
   body('role')
     .optional()
-    .isIn(['admin', 'manager', 'agent', 'user'])
+    .isIn(['regular', 'admin'])
     .withMessage('Rôle invalide')
 ];
 
@@ -67,11 +62,6 @@ const validateProfileUpdate = [
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage('Le nom doit contenir entre 2 et 50 caractères'),
-  body('company')
-    .optional()
-    .trim()
-    .isLength({ max: 255 })
-    .withMessage('Le nom de l\'entreprise ne peut pas dépasser 255 caractères'),
   body('avatarUrl')
     .optional()
     .isURL()
@@ -95,9 +85,15 @@ const handleValidationErrors = (req, res, next) => {
 };
 
 // Public routes
-router.post('/register', validateRegistration, handleValidationErrors, authController.register);
+router.post('/register', registrationRateLimiter, validateRegistration, handleValidationErrors, authController.register);
 router.post('/login', validateLogin, handleValidationErrors, authController.login);
 router.post('/refresh', authController.refreshToken);
+router.post('/check-email', (req, res, next) => {
+  console.log('check-email route hit');
+  console.log('Request URL:', req.url);
+  console.log('Request method:', req.method);
+  next();
+}, authController.checkEmail);
 
 // Protected routes
 router.post('/logout', authenticateToken, authController.logout);

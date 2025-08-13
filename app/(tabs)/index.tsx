@@ -7,30 +7,48 @@ import ObligationCard from '@/components/ObligationCard';
 import PingNavigationBar from '@/components/PingNavigationBar';
 import PingEcheanceModal from '@/components/PingEcheanceModal';
 import AppHeader from '@/components/AppHeader';
-import { mockEnterprises, generateMockObligations } from '@/utils/mockData';
 import { FiscalObligation, StatusObligation } from '@/types/fiscal';
 import { updateObligationStatus } from '@/utils/fiscalCalculations';
 import { ReminderData } from '@/components/ReminderModal';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
+import RoleManagementService from '@/utils/roleManagementService';
+import { CompanyWithRole } from '@/types/auth';
 
 export default function Dashboard() {
   const { theme, strings, isRTL } = useApp();
+  const { user } = useAuth();
   const [obligations, setObligations] = useState<FiscalObligation[]>([]);
+  const [enterprises, setEnterprises] = useState<CompanyWithRole[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showPingModal, setShowPingModal] = useState(false);
   const [pingedDeclarations, setPingedDeclarations] = useState<FiscalObligation[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    if (user) {
+      loadDashboardData();
+    }
+  }, [user]);
 
-  const loadDashboardData = () => {
-    const mockObligations = generateMockObligations();
-    const updatedObligations = mockObligations.map(obligation => ({
-      ...obligation,
-      status: updateObligationStatus(obligation)
-    }));
-    setObligations(updatedObligations);
+  const loadDashboardData = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      // Load user's companies
+      const companies = await RoleManagementService.getUserCompanies();
+      setEnterprises(companies);
+      
+      // For now, start with empty obligations for new users
+      setObligations([]);
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      setEnterprises([]);
+      setObligations([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onRefresh = () => {
@@ -56,11 +74,11 @@ export default function Dashboard() {
   };
 
   const getEnterpriseNameById = (id: string) => {
-    const enterprise = mockEnterprises.find(e => e.id === id);
-    return enterprise ? enterprise.raisonSociale : 'Entreprise inconnue';
+    const enterprise = enterprises.find(e => e.id === id);
+    return enterprise ? enterprise.name : 'Entreprise inconnue';
   };
 
-  const totalEnterprises = mockEnterprises.length;
+  const totalEnterprises = enterprises.length;
   const upcomingObligations = obligations.filter(o => o.status === StatusObligation.UPCOMING).length;
   const pendingObligations = obligations.filter(o => o.status === StatusObligation.PENDING).length;
   const overdueObligations = obligations.filter(o => o.status === StatusObligation.OVERDUE).length;
@@ -71,7 +89,7 @@ export default function Dashboard() {
     .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
     .slice(0, 5);
 
-  const complianceRate = Math.round((completedObligations / obligations.length) * 100) || 0;
+  const complianceRate = obligations.length > 0 ? Math.round((completedObligations / obligations.length) * 100) : 0;
 
   const styles = createStyles(theme, isRTL);
 
@@ -207,13 +225,30 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
           
-          {urgentObligations.length === 0 ? (
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Chargement des données...</Text>
+            </View>
+          ) : obligations.length === 0 ? (
             <View style={styles.emptyState}>
               <View style={styles.emptyIconContainer}>
                 <CheckCircle size={32} color="#10B981" />
               </View>
-              <Text style={styles.emptyTitle}>Excellent travail !</Text>
-              <Text style={styles.emptySubtitle}>Toutes vos obligations urgentes sont à jour</Text>
+              <Text style={styles.emptyTitle}>
+                {enterprises.length === 0 ? 'Bienvenue !' : 'Aucune obligation'}
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                {enterprises.length === 0 
+                  ? 'Commencez par ajouter votre première entreprise pour voir vos obligations fiscales'
+                  : 'Toutes vos obligations urgentes sont à jour'
+                }
+              </Text>
+              {enterprises.length === 0 && (
+                <TouchableOpacity style={styles.emptyActionButton}>
+                  <Plus size={20} color="#3B82F6" />
+                  <Text style={styles.emptyActionText}>Ajouter une entreprise</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             <View style={styles.obligationsContainer}>
@@ -240,7 +275,7 @@ export default function Dashboard() {
       <PingEcheanceModal
         visible={showPingModal}
         onClose={() => setShowPingModal(false)}
-        enterprises={mockEnterprises}
+        enterprises={enterprises}
         onPingDeclaration={handlePingDeclaration}
       />
     </SafeAreaView>
@@ -395,6 +430,19 @@ const createStyles = (theme: any, isRTL: boolean) => StyleSheet.create({
   obligationsContainer: {
     gap: 12
   },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#64748B',
+    marginTop: 16
+  },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 48,
@@ -422,7 +470,24 @@ const createStyles = (theme: any, isRTL: boolean) => StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 20
+    lineHeight: 20,
+    marginBottom: 24
+  },
+  emptyActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#DBEAFE'
+  },
+  emptyActionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#3B82F6',
+    marginLeft: 8
   },
   bottomSpacing: {
     height: 20

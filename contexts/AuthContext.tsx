@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, AuthState, LoginCredentials, RegisterData, AuthContextType, UserRole } from '@/types/auth';
+import { User, LoginData, RegisterData, AuthContextType, UserRole } from '@/types/auth';
 import apiProxy from '@/utils/apiProxy';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -9,12 +9,9 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    isAuthenticated: false,
-    isLoading: true,
-    error: null
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // Check for stored auth data on app start
@@ -31,19 +28,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
           email: 'demo@example.com',
           firstName: 'Demo',
           lastName: 'User',
-          company: 'Demo Company',
           role: UserRole.MANAGER,
+          status: 'active',
           createdAt: new Date('2024-01-01'),
-          lastLoginAt: new Date(),
-          isActive: true
+          updatedAt: new Date('2024-01-01'),
+          lastLoginAt: new Date()
         };
         
-        setAuthState({
-          user: demoUser,
-          isAuthenticated: true,
-          isLoading: false,
-          error: null
-        });
+        setUser(demoUser);
+        setIsLoading(false);
         return;
       }
 
@@ -61,30 +54,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
             email: profile.email,
             firstName: profile.firstName,
             lastName: profile.lastName,
-            company: profile.company,
             role: profile.role,
-            avatar: profile.avatar,
+            status: profile.status || 'active',
             createdAt: new Date(profile.createdAt),
+            updatedAt: new Date(profile.updatedAt),
             lastLoginAt: profile.lastLoginAt ? new Date(profile.lastLoginAt) : undefined,
-            isActive: profile.isActive,
           };
           
-          setAuthState({
-            user,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null
-          });
+          setUser(user);
+          setIsLoading(false);
         } catch (profileError) {
           console.error('Profile fetch error:', profileError);
           // If profile fetch fails, clear tokens and continue as unauthenticated
           localStorage.removeItem('authToken');
           localStorage.removeItem('refreshToken');
           apiProxy.clearTokens();
-          setAuthState(prev => ({ ...prev, isLoading: false }));
+          setIsLoading(false);
         }
       } else {
-        setAuthState(prev => ({ ...prev, isLoading: false }));
+        setIsLoading(false);
       }
     } catch (error) {
       console.error('Auth check error:', error);
@@ -93,47 +81,46 @@ export function AuthProvider({ children }: AuthProviderProps) {
       localStorage.removeItem('refreshToken');
       apiProxy.clearTokens();
       
-      setAuthState(prev => ({ 
-        ...prev, 
-        isLoading: false, 
-        error: 'Erreur lors de la vérification de l\'authentification' 
-      }));
+      setIsLoading(false);
+      setError('Erreur lors de la vérification de l\'authentification');
     }
   };
 
-  const login = async (credentials: LoginCredentials) => {
-    setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
+  const login = async (credentials: LoginData) => {
+    console.log('Login attempt with:', credentials.email);
+    setIsLoading(true);
+    setError(null);
     
     try {
       const response = await apiProxy.login(credentials);
+      console.log('Login response:', response);
       
       const user: User = {
         id: response.user.id,
         email: response.user.email,
         firstName: response.user.firstName,
         lastName: response.user.lastName,
-        company: response.user.company,
         role: response.user.role,
-        avatar: response.user.avatar,
+        status: response.user.status || 'active',
         createdAt: new Date(response.user.createdAt),
+        updatedAt: new Date(response.user.updatedAt),
         lastLoginAt: response.user.lastLoginAt ? new Date(response.user.lastLoginAt) : undefined,
-        isActive: response.user.isActive,
       };
 
       localStorage.setItem('authToken', response.tokens.accessToken);
       localStorage.setItem('refreshToken', response.tokens.refreshToken);
 
-      setAuthState({
-        user,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
-      });
+      console.log('Setting user in context:', user);
+      setUser(user);
+      setIsLoading(false);
+      console.log('User set, loading set to false');
     } catch (error) {
       console.error('Login error:', error);
+      console.log('Error message:', error.message);
+      console.log('Error status:', error.status);
       
       // Check if it's a network error (backend not available)
-      if (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Validation failed')) {
+      if (error.message.includes('fetch') || error.message.includes('network')) {
         // Fallback to demo mode with mock data
         console.log('Backend not available, using demo mode');
         
@@ -142,34 +129,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
           email: credentials.email,
           firstName: 'Demo',
           lastName: 'User',
-          company: 'Demo Company',
-          role: UserRole.MANAGER,
+          role: UserRole.REGULAR,
+          status: 'active',
           createdAt: new Date('2024-01-01'),
-          lastLoginAt: new Date(),
-          isActive: true
+          updatedAt: new Date('2024-01-01'),
+          lastLoginAt: new Date()
         };
 
         localStorage.setItem('demoMode', 'true');
         localStorage.setItem('authToken', 'demo-token');
 
-        setAuthState({
-          user: demoUser,
-          isAuthenticated: true,
-          isLoading: false,
-          error: null
-        });
+        setUser(demoUser);
+        setIsLoading(false);
       } else {
-        setAuthState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: 'Email ou mot de passe incorrect'
-        }));
+        setIsLoading(false);
+        // Handle specific backend errors
+        if (error.message.includes('Invalid credentials') || error.message.includes('incorrect')) {
+          setError('Email ou mot de passe incorrect');
+        } else if (error.message.includes('Account inactive')) {
+          setError('Compte inactif, veuillez contacter l\'administrateur');
+        } else if (error.message.includes('Validation failed')) {
+          setError('Données de validation invalides');
+        } else {
+          setError(error.message || 'Erreur lors de la connexion');
+        }
       }
     }
   };
 
   const register = async (data: RegisterData) => {
-    setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
+    setIsLoading(true);
+    setError(null);
     
     try {
       const response = await apiProxy.register(data);
@@ -179,28 +169,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
         email: response.user.email,
         firstName: response.user.firstName,
         lastName: response.user.lastName,
-        company: response.user.company,
         role: response.user.role,
-        avatar: response.user.avatar,
+        status: response.user.status || 'active',
         createdAt: new Date(response.user.createdAt),
+        updatedAt: new Date(response.user.updatedAt),
         lastLoginAt: response.user.lastLoginAt ? new Date(response.user.lastLoginAt) : undefined,
-        isActive: response.user.isActive,
       };
 
       localStorage.setItem('authToken', response.tokens.accessToken);
       localStorage.setItem('refreshToken', response.tokens.refreshToken);
 
-      setAuthState({
-        user: newUser,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
-      });
+      setUser(newUser);
+      setIsLoading(false);
     } catch (error) {
       console.error('Register error:', error);
+      console.log('Error message:', error.message);
+      console.log('Error status:', error.status);
       
       // Check if it's a network error (backend not available)
-      if (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Validation failed')) {
+      if (error.message.includes('fetch') || error.message.includes('network')) {
         // Fallback to demo mode with mock data
         console.log('Backend not available, using demo mode for registration');
         
@@ -209,28 +196,35 @@ export function AuthProvider({ children }: AuthProviderProps) {
           email: data.email,
           firstName: data.firstName,
           lastName: data.lastName,
-          company: data.company || 'Demo Company',
-          role: UserRole.MANAGER,
+          role: UserRole.REGULAR,
+          status: 'active',
           createdAt: new Date(),
-          lastLoginAt: new Date(),
-          isActive: true
+          updatedAt: new Date(),
+          lastLoginAt: new Date()
         };
 
         localStorage.setItem('demoMode', 'true');
         localStorage.setItem('authToken', 'demo-token');
 
-        setAuthState({
-          user: demoUser,
-          isAuthenticated: true,
-          isLoading: false,
-          error: null
-        });
+        setUser(demoUser);
+        setIsLoading(false);
       } else {
-        setAuthState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: 'Erreur lors de la création du compte'
-        }));
+        setIsLoading(false);
+        // Handle specific backend errors
+        if (error.message.includes('User already exists') || error.message.includes('existe déjà') || error.message.includes('already exists')) {
+          console.log('Setting user exists error');
+          setError('Un utilisateur avec cet email existe déjà');
+        } else if (error.message.includes('Validation failed')) {
+          setError('Données de validation invalides. Vérifiez vos informations.');
+        } else if (error.message.includes('Missing required fields')) {
+          setError('Tous les champs obligatoires doivent être remplis');
+        } else if (error.message.includes('Trop de tentatives') || error.message.includes('Too many requests')) {
+          setError('Trop de tentatives. Veuillez attendre quelques minutes avant de réessayer.');
+        } else if (error.status === 429) {
+          setError('Trop de tentatives. Veuillez attendre quelques minutes avant de réessayer.');
+        } else {
+          setError(error.message || 'Erreur lors de la création du compte');
+        }
       }
     }
   };
@@ -243,54 +237,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       localStorage.removeItem('authToken');
       localStorage.removeItem('refreshToken');
+      localStorage.removeItem('demoMode');
       apiProxy.clearTokens();
-      setAuthState({
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: null
-      });
-    }
-  };
-
-  const updateProfile = async (data: Partial<User>) => {
-    if (!authState.user) return;
-
-    setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
-    
-    try {
-      const response = await apiProxy.updateProfile(data);
-      
-      const updatedUser = { ...authState.user, ...response.user };
-      setAuthState(prev => ({
-        ...prev,
-        user: updatedUser,
-        isLoading: false
-      }));
-    } catch (error) {
-      console.error('Update profile error:', error);
-      setAuthState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: 'Erreur lors de la mise à jour du profil'
-      }));
+      setUser(null);
+      setIsLoading(false);
+      setError(null);
     }
   };
 
   const clearError = () => {
-    setAuthState(prev => ({ ...prev, error: null }));
+    setError(null);
   };
 
   return (
     <AuthContext.Provider value={{
-      user: authState.user,
-      isAuthenticated: authState.isAuthenticated,
-      isLoading: authState.isLoading,
-      error: authState.error,
+      user,
+      isAuthenticated: !!user,
       login,
       register,
       logout,
-      updateProfile,
+      isLoading,
+      error,
       clearError
     }}>
       {children}

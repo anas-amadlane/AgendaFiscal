@@ -45,7 +45,11 @@ class ApiProxy {
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || 'Request failed');
+        const errorMessage = data.message || data.error || 'Request failed';
+        const error = new Error(errorMessage);
+        error.status = response.status;
+        error.details = data.details || null;
+        throw error;
       }
 
       return data;

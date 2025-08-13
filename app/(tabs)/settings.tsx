@@ -324,27 +324,17 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Management Section - Only for Managers and Admins */}
-        {(user?.role === UserRole.MANAGER || user?.role === UserRole.ADMIN) && (
+        {/* Management Section - Only for Managers */}
+        {user?.role === UserRole.MANAGER && (
           <View style={styles.section}>
             <Text style={styles.sectionHeader}>Gestion</Text>
             <View style={styles.settingsGroup}>
-              {user?.role === UserRole.MANAGER && (
-                <SettingItem
-                  icon={Users}
-                  title="Gestion des agents"
-                  subtitle="Assigner des entreprises aux agents"
-                  onPress={() => setShowAgentManagement(true)}
-                />
-              )}
-              {user?.role === UserRole.ADMIN && (
-                <SettingItem
-                  icon={Users}
-                  title="Gestion des utilisateurs"
-                  subtitle="Gérer tous les utilisateurs du système"
-                  onPress={() => setShowUserManagement(true)}
-                />
-              )}
+              <SettingItem
+                icon={Users}
+                title="Gestion des agents"
+                subtitle="Assigner des entreprises aux agents"
+                onPress={() => setShowAgentManagement(true)}
+              />
             </View>
           </View>
         )}

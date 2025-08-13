@@ -3,23 +3,14 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
-  company?: string;
   role: UserRole;
-  avatar?: string;
+  status: 'active' | 'inactive' | 'suspended';
   createdAt: Date;
+  updatedAt: Date;
   lastLoginAt?: Date;
-  isActive: boolean;
-  token?: string;
 }
 
-export interface AuthState {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  error: string | null;
-}
-
-export interface LoginCredentials {
+export interface LoginData {
   email: string;
   password: string;
 }
@@ -29,27 +20,55 @@ export interface RegisterData {
   password: string;
   firstName: string;
   lastName: string;
-  company?: string;
   role?: UserRole;
 }
 
+// User roles in the users table (simplified)
 export enum UserRole {
-  ADMIN = 'admin',
+  REGULAR = 'regular',
+  ADMIN = 'admin'
+}
+
+// Company roles in the company_user_roles table
+export enum CompanyRole {
+  OWNER = 'owner',
   MANAGER = 'manager',
-  AGENT = 'agent',
-  USER = 'user'
+  AGENT = 'agent'
+}
+
+export interface CompanyWithRole {
+  id: string;
+  name: string;
+  registrationNumber?: string;
+  taxId?: string;
+  status: 'active' | 'inactive' | 'suspended';
+  userRole: CompanyRole;
+  userStatus: 'active' | 'inactive' | 'pending';
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  login: (data: LoginData) => Promise<void>;
+  register: (data: RegisterData) => Promise<void>;
+  logout: () => Promise<void>;
   isLoading: boolean;
   error: string | null;
-  login: (credentials: LoginCredentials) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
-  logout: () => void;
-  updateProfile: (data: Partial<User>) => Promise<void>;
   clearError: () => void;
+}
+
+// Company user role assignment
+export interface CompanyUserRole {
+  id: string;
+  companyId: string;
+  userId: string;
+  role: CompanyRole;
+  permissions: Record<string, any>;
+  status: 'active' | 'inactive' | 'pending';
+  assignedBy: string;
+  assignedAt: Date;
 }
 
 // New interfaces for role management
@@ -57,7 +76,7 @@ export interface CompanyAssignment {
   id: string;
   companyId: string;
   userId: string;
-  role: UserRole;
+  role: CompanyRole;
   status: 'active' | 'inactive' | 'pending';
   assignedBy: string;
   assignedAt: Date;
@@ -69,7 +88,7 @@ export interface UserInvitation {
   email: string;
   invitedBy: string;
   companyId: string;
-  role: UserRole;
+  role: CompanyRole;
   invitationToken: string;
   status: 'pending' | 'accepted' | 'declined' | 'expired';
   expiresAt: Date;
@@ -80,29 +99,12 @@ export interface UserInvitation {
 
 export interface ManagerAgentAssignment {
   id: string;
+  companyId: string;
   managerId: string;
   agentId: string;
   assignmentType: 'all' | 'specific';
   status: 'active' | 'inactive' | 'pending';
   createdAt: Date;
-}
-
-export interface CompanyWithRole {
-  id: string;
-  name: string;
-  registrationNumber?: string;
-  taxId?: string;
-  address?: string;
-  phone?: string;
-  email?: string;
-  website?: string;
-  industry?: string;
-  size?: string;
-  status: 'active' | 'inactive' | 'suspended';
-  userRole: UserRole;
-  userStatus: 'active' | 'inactive' | 'pending';
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 export interface CompanyUser {
@@ -111,7 +113,7 @@ export interface CompanyUser {
   lastName: string;
   email: string;
   avatar?: string;
-  role: UserRole;
+  role: CompanyRole;
   status: 'active' | 'inactive' | 'pending';
   assignedAt: Date;
   assignedByName: string;

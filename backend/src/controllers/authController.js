@@ -23,7 +23,7 @@ const generateTokens = (userId) => {
 // Register new user
 const register = async (req, res) => {
   try {
-    const { email, password, firstName, lastName, company, role = 'user' } = req.body;
+    const { email, password, firstName, lastName, role = 'regular' } = req.body;
 
     // Validate input
     if (!email || !password || !firstName || !lastName) {
@@ -48,10 +48,10 @@ const register = async (req, res) => {
 
     // Create user
     const result = await query(
-      `INSERT INTO users (email, password_hash, first_name, last_name, company, role)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, email, first_name, last_name, company, role, created_at`,
-      [email, passwordHash, firstName, lastName, company, role]
+      `INSERT INTO users (email, password_hash, first_name, last_name, role)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, email, first_name, last_name, role, created_at`,
+      [email, passwordHash, firstName, lastName, role]
     );
 
     const user = result.rows[0];
@@ -80,7 +80,6 @@ const register = async (req, res) => {
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        company: user.company,
         role: user.role,
         createdAt: user.created_at
       },
@@ -100,6 +99,52 @@ const register = async (req, res) => {
   }
 };
 
+// Check if email exists
+const checkEmail = async (req, res) => {
+  console.log('checkEmail function called');
+  console.log('Request body:', req.body);
+  
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      console.log('No email provided');
+      return res.status(400).json({
+        error: 'Email required',
+        message: 'Email requis'
+      });
+    }
+
+    console.log('Checking email:', email);
+
+    // Check if user already exists
+    const existingUser = await getOne('SELECT id FROM users WHERE email = $1', [email]);
+    
+    console.log('Existing user result:', existingUser);
+    
+    if (existingUser) {
+      console.log('Email exists, returning 409');
+      return res.status(409).json({
+        error: 'Email already exists',
+        message: 'Un utilisateur avec cet email existe déjà'
+      });
+    }
+
+    console.log('Email available, returning 200');
+    res.status(200).json({
+      message: 'Email available',
+      available: true
+    });
+
+  } catch (error) {
+    console.error('Email check error:', error);
+    res.status(500).json({
+      error: 'Email check failed',
+      message: 'Erreur lors de la vérification de l\'email'
+    });
+  }
+};
+
 // Login user
 const login = async (req, res) => {
   try {
@@ -115,7 +160,7 @@ const login = async (req, res) => {
 
     // Find user
     const user = await getOne(
-      'SELECT id, email, password_hash, first_name, last_name, company, role, is_active FROM users WHERE email = $1',
+      'SELECT id, email, password_hash, first_name, last_name, role, is_active FROM users WHERE email = $1',
       [email]
     );
 
@@ -166,7 +211,6 @@ const login = async (req, res) => {
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        company: user.company,
         role: user.role
       },
       tokens: {
@@ -276,10 +320,10 @@ const refreshToken = async (req, res) => {
 // Get current user profile
 const getProfile = async (req, res) => {
   try {
-    const user = await getOne(
-      `SELECT id, email, first_name, last_name, company, role, avatar_url, 
-              is_active, email_verified, last_login_at, created_at
-       FROM users WHERE id = $1`,
+        const user = await getOne(
+      `SELECT id, email, first_name, last_name, role, avatar_url, 
+               is_active, email_verified, last_login_at, created_at
+        FROM users WHERE id = $1`,
       [req.user.id]
     );
 
@@ -289,7 +333,6 @@ const getProfile = async (req, res) => {
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        company: user.company,
         role: user.role,
         avatarUrl: user.avatar_url,
         isActive: user.is_active,
@@ -311,18 +354,17 @@ const getProfile = async (req, res) => {
 // Update user profile
 const updateProfile = async (req, res) => {
   try {
-    const { firstName, lastName, company, avatarUrl } = req.body;
+    const { firstName, lastName, avatarUrl } = req.body;
 
     const result = await query(
       `UPDATE users 
        SET first_name = COALESCE($1, first_name),
            last_name = COALESCE($2, last_name),
-           company = COALESCE($3, company),
-           avatar_url = COALESCE($4, avatar_url),
+           avatar_url = COALESCE($3, avatar_url),
            updated_at = NOW()
-       WHERE id = $5
-       RETURNING id, email, first_name, last_name, company, role, avatar_url`,
-      [firstName, lastName, company, avatarUrl, req.user.id]
+       WHERE id = $4
+       RETURNING id, email, first_name, last_name, role, avatar_url`,
+      [firstName, lastName, avatarUrl, req.user.id]
     );
 
     const user = result.rows[0];
@@ -334,7 +376,6 @@ const updateProfile = async (req, res) => {
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        company: user.company,
         role: user.role,
         avatarUrl: user.avatar_url
       }
@@ -406,5 +447,6 @@ module.exports = {
   refreshToken,
   getProfile,
   updateProfile,
-  changePassword
+  changePassword,
+  checkEmail
 }; 

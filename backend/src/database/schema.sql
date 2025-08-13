@@ -4,16 +4,15 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Users table
+-- Users table (simplified roles: only regular and admin)
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
-    company VARCHAR(255),
-    role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'manager', 'agent', 'user')),
     avatar_url VARCHAR(500),
+    role VARCHAR(20) NOT NULL DEFAULT 'regular' CHECK (role IN ('regular', 'admin')),
     is_active BOOLEAN DEFAULT true,
     email_verified BOOLEAN DEFAULT false,
     last_login_at TIMESTAMP,
@@ -39,7 +38,27 @@ CREATE TABLE companies (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Fiscal Calendar table for default calendar data
+CREATE TABLE fiscal_calendar (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    liste VARCHAR(100) NOT NULL,
+    categorie_personnes VARCHAR(100) NOT NULL,
+    sous_categorie VARCHAR(100),
+    mois VARCHAR(50),
+    type_impot VARCHAR(100) NOT NULL,
+    date_echeance DATE NOT NULL,
+    periode_declaration VARCHAR(100),
+    type_declaration VARCHAR(100),
+    formulaire VARCHAR(100),
+    lien VARCHAR(500),
+    commentaire TEXT,
+    is_tva_assujetti BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Company user roles (many-to-many relationship between users and companies with specific roles)
+-- This table handles agent and manager roles within companies
 CREATE TABLE company_user_roles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
@@ -69,16 +88,17 @@ CREATE TABLE user_invitations (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Manager-Agent relationships
+-- Manager-Agent relationships within companies
 CREATE TABLE manager_agent_assignments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     manager_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     agent_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     assignment_type VARCHAR(20) NOT NULL DEFAULT 'all' CHECK (assignment_type IN ('all', 'specific')),
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'pending')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(manager_id, agent_id)
+    UNIQUE(company_id, manager_id, agent_id)
 );
 
 -- Agent-Company assignments (for specific company assignments)
@@ -167,6 +187,11 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_companies_name ON companies(name);
 CREATE INDEX idx_companies_created_by ON companies(created_by);
+CREATE INDEX idx_fiscal_calendar_categorie ON fiscal_calendar(categorie_personnes);
+CREATE INDEX idx_fiscal_calendar_sous_categorie ON fiscal_calendar(sous_categorie);
+CREATE INDEX idx_fiscal_calendar_type_impot ON fiscal_calendar(type_impot);
+CREATE INDEX idx_fiscal_calendar_date_echeance ON fiscal_calendar(date_echeance);
+CREATE INDEX idx_fiscal_calendar_is_tva_assujetti ON fiscal_calendar(is_tva_assujetti);
 CREATE INDEX idx_company_user_roles_company_id ON company_user_roles(company_id);
 CREATE INDEX idx_company_user_roles_user_id ON company_user_roles(user_id);
 CREATE INDEX idx_company_user_roles_role ON company_user_roles(role);
@@ -174,6 +199,7 @@ CREATE INDEX idx_user_invitations_email ON user_invitations(email);
 CREATE INDEX idx_user_invitations_token ON user_invitations(invitation_token);
 CREATE INDEX idx_user_invitations_company_id ON user_invitations(company_id);
 CREATE INDEX idx_user_invitations_status ON user_invitations(status);
+CREATE INDEX idx_manager_agent_company_id ON manager_agent_assignments(company_id);
 CREATE INDEX idx_manager_agent_manager_id ON manager_agent_assignments(manager_id);
 CREATE INDEX idx_manager_agent_agent_id ON manager_agent_assignments(agent_id);
 CREATE INDEX idx_agent_company_agent_id ON agent_company_assignments(agent_id);
@@ -202,9 +228,13 @@ $$ language 'plpgsql';
 -- Apply updated_at triggers
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_companies_updated_at BEFORE UPDATE ON companies FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_fiscal_calendar_updated_at BEFORE UPDATE ON fiscal_calendar FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_company_user_roles_updated_at BEFORE UPDATE ON company_user_roles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_user_invitations_updated_at BEFORE UPDATE ON user_invitations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_manager_agent_assignments_updated_at BEFORE UPDATE ON manager_agent_assignments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_agent_company_assignments_updated_at BEFORE UPDATE ON agent_company_assignments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_fiscal_obligations_updated_at BEFORE UPDATE ON fiscal_obligations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_dashboard_configurations_updated_at BEFORE UPDATE ON dashboard_configurations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 
+CREATE TRIGGER update_dashboard_configurations_updated_at BEFORE UPDATE ON dashboard_configurations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_user_sessions_updated_at BEFORE UPDATE ON user_sessions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_audit_logs_updated_at BEFORE UPDATE ON audit_logs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_notifications_updated_at BEFORE UPDATE ON notifications FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 
