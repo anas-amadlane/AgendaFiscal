@@ -1,4 +1,5 @@
 const { query, getOne, getMany, transaction } = require('../config/database');
+const bcrypt = require('bcrypt');
 
 // Get all users (admin only)
 const getAllUsers = async (req, res) => {
@@ -29,13 +30,18 @@ const getAllUsers = async (req, res) => {
     );
     const total = parseInt(countResult.rows[0].count);
 
-    // Get users
+    // Get users with company count
     paramCount++;
     const users = await getMany(
-      `SELECT id, email, first_name, last_name, company, role, is_active, 
-              email_verified, last_login_at, created_at
-       FROM users ${whereClause}
-       ORDER BY created_at DESC
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.is_active, 
+              u.email_verified, u.last_login_at, u.created_at,
+              COUNT(DISTINCT c.id) as companies_count
+       FROM users u
+       LEFT JOIN companies c ON u.id = c.created_by
+       ${whereClause}
+       GROUP BY u.id, u.email, u.first_name, u.last_name, u.role, u.is_active, 
+                u.email_verified, u.last_login_at, u.created_at
+       ORDER BY u.created_at DESC
        LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
       [...params, limit, offset]
     );
@@ -46,12 +52,12 @@ const getAllUsers = async (req, res) => {
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        company: user.company,
         role: user.role,
         isActive: user.is_active,
         emailVerified: user.email_verified,
         lastLoginAt: user.last_login_at,
-        createdAt: user.created_at
+        createdAt: user.created_at,
+        companiesCount: parseInt(user.companies_count)
       })),
       pagination: {
         page: parseInt(page),
@@ -66,6 +72,233 @@ const getAllUsers = async (req, res) => {
     res.status(500).json({
       error: 'Failed to get users',
       message: 'Erreur lors de la récupération des utilisateurs'
+    });
+  }
+};
+
+// Create new user (admin only)
+const createUser = async (req, res) => {
+  try {
+    const { firstName, lastName, email, password, role, isActive = true } = req.body;
+
+    // Check if email already exists
+    const existingUser = await getOne(
+      'SELECT id FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (existingUser) {
+      return res.status(409).json({
+        error: 'Email already exists',
+        message: 'Cet email est déjà utilisé'
+      });
+    }
+
+    // Hash password
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // Create user
+    const result = await query(
+      `INSERT INTO users (first_name, last_name, email, password_hash, role, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, email, first_name, last_name, role, is_active, created_at`,
+      [firstName, lastName, email, passwordHash, role, isActive]
+    );
+
+    const user = result.rows[0];
+
+    res.status(201).json({
+      message: 'Utilisateur créé avec succès',
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        role: user.role,
+        isActive: user.is_active,
+        createdAt: user.created_at
+      }
+    });
+
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({
+      error: 'Failed to create user',
+      message: 'Erreur lors de la création de l\'utilisateur'
+    });
+  }
+};
+
+// Update user (admin only)
+const updateUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { firstName, lastName, email, role, isActive } = req.body;
+
+    // Check if user exists
+    const existingUser = await getOne(
+      'SELECT id, email FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (!existingUser) {
+      return res.status(404).json({
+        error: 'User not found',
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    // Check if email is already used by another user
+    if (email !== existingUser.email) {
+      const emailExists = await getOne(
+        'SELECT id FROM users WHERE email = $1 AND id != $2',
+        [email, userId]
+      );
+
+      if (emailExists) {
+        return res.status(409).json({
+          error: 'Email already exists',
+          message: 'Cet email est déjà utilisé par un autre utilisateur'
+        });
+      }
+    }
+
+    // Update user
+    const result = await query(
+      `UPDATE users 
+       SET first_name = $1, last_name = $2, email = $3, role = $4, is_active = $5, updated_at = NOW()
+       WHERE id = $6
+       RETURNING id, email, first_name, last_name, role, is_active, updated_at`,
+      [firstName, lastName, email, role, isActive, userId]
+    );
+
+    const user = result.rows[0];
+
+    res.json({
+      message: 'Utilisateur mis à jour avec succès',
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        role: user.role,
+        isActive: user.is_active,
+        updatedAt: user.updated_at
+      }
+    });
+
+  } catch (error) {
+    console.error('Update user error:', error);
+    res.status(500).json({
+      error: 'Failed to update user',
+      message: 'Erreur lors de la mise à jour de l\'utilisateur'
+    });
+  }
+};
+
+// Delete user (admin only)
+const deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Check if user exists
+    const existingUser = await getOne(
+      'SELECT id, email, first_name, last_name FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (!existingUser) {
+      return res.status(404).json({
+        error: 'User not found',
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    // Check if user has associated companies
+    const companiesCount = await getOne(
+      'SELECT COUNT(*) as count FROM companies WHERE created_by = $1',
+      [userId]
+    );
+
+    if (parseInt(companiesCount.count) > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete user with companies',
+        message: 'Impossible de supprimer un utilisateur qui a des entreprises associées'
+      });
+    }
+
+    // Delete user
+    await query(
+      'DELETE FROM users WHERE id = $1',
+      [userId]
+    );
+
+    res.json({
+      message: 'Utilisateur supprimé avec succès',
+      deletedUser: {
+        id: existingUser.id,
+        email: existingUser.email,
+        firstName: existingUser.first_name,
+        lastName: existingUser.last_name
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({
+      error: 'Failed to delete user',
+      message: 'Erreur lors de la suppression de l\'utilisateur'
+    });
+  }
+};
+
+// Change user password (admin only)
+const changeUserPassword = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { newPassword } = req.body;
+
+    // Check if user exists
+    const existingUser = await getOne(
+      'SELECT id, email, first_name, last_name FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (!existingUser) {
+      return res.status(404).json({
+        error: 'User not found',
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    // Hash new password
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update password
+    await query(
+      `UPDATE users 
+       SET password_hash = $1, updated_at = NOW()
+       WHERE id = $2`,
+      [passwordHash, userId]
+    );
+
+    res.json({
+      message: 'Mot de passe modifié avec succès',
+      user: {
+        id: existingUser.id,
+        email: existingUser.email,
+        firstName: existingUser.first_name,
+        lastName: existingUser.last_name
+      }
+    });
+
+  } catch (error) {
+    console.error('Change user password error:', error);
+    res.status(500).json({
+      error: 'Failed to change password',
+      message: 'Erreur lors de la modification du mot de passe'
     });
   }
 };
@@ -426,6 +659,10 @@ const getUserStats = async (req, res) => {
 
 module.exports = {
   getAllUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  changeUserPassword,
   getManagerAgents,
   assignAgentToManager,
   removeAgentAssignment,

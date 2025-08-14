@@ -21,7 +21,7 @@ export class RoleManagementService {
         return 'Manager';
       case UserRole.AGENT:
         return 'Agent';
-      case UserRole.USER:
+      case UserRole.REGULAR:
         return 'Utilisateur';
       default:
         return 'Inconnu';
@@ -34,7 +34,7 @@ export class RoleManagementService {
         return '#1E40AF'; // Blue
       case UserRole.AGENT:
         return '#059669'; // Green
-      case UserRole.USER:
+      case UserRole.REGULAR:
         return '#6B7280'; // Gray
       default:
         return '#6B7280';

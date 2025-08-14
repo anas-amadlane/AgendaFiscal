@@ -1,59 +1,45 @@
 import { Tabs } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
-import { Redirect } from 'expo-router';
 import { Building2, Calendar, Bell, Settings, ChartBar as BarChart3, Shield, Mail, Users } from 'lucide-react-native';
+import { UserRole } from '@/types/auth';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function TabsLayout() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { user } = useAuth();
   const { theme, strings, isRTL } = useApp();
 
-  console.log('TabsLayout - isAuthenticated:', isAuthenticated);
-  console.log('TabsLayout - isLoading:', isLoading);
-  console.log('TabsLayout - user:', user);
-
-  if (isLoading) {
-    console.log('TabsLayout - showing loading');
-    return null; // Or a loading screen
-  }
-
-  if (!isAuthenticated) {
-    console.log('TabsLayout - redirecting to login');
-    return <Redirect href="/(auth)/login" />;
-  }
-
-  console.log('TabsLayout - showing tabs');
-
   // Determine which tabs to show based on user role
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === UserRole.ADMIN;
   
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
-        tabBarStyle: {
-          backgroundColor: theme.colors.surface,
-          borderTopWidth: 1,
-          borderTopColor: theme.colors.outlineVariant,
-          height: 80,
-          paddingBottom: 8,
-          paddingTop: 8,
-          elevation: 8,
-          shadowColor: theme.colors.shadow,
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
-          marginTop: 4,
-          fontFamily: 'Inter-Medium',
-        }
-      }}
-    >
+    <AuthGuard requireAuth={true}>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: theme.colors.primary,
+          tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
+          tabBarStyle: {
+            backgroundColor: theme.colors.surface,
+            borderTopWidth: 1,
+            borderTopColor: theme.colors.outlineVariant,
+            height: 80,
+            paddingBottom: 8,
+            paddingTop: 8,
+            elevation: 8,
+            shadowColor: theme.colors.shadow,
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+          },
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: '500',
+            marginTop: 4,
+            fontFamily: 'Inter-Medium',
+          }
+        }}
+      >
       {/* Admin Dashboard - only for admin users */}
       <Tabs.Screen
         name="admin-dashboard"
@@ -102,9 +88,17 @@ export default function TabsLayout() {
         }}
       />
       
-      {/* Regular Dashboard - only for regular users */}
+      {/* Index route for redirects */}
       <Tabs.Screen
         name="index"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      
+      {/* Regular Dashboard - only for regular users */}
+      <Tabs.Screen
+        name="dashboard"
         options={{
           title: strings.dashboard,
           tabBarIcon: ({ size, color }) => (
@@ -161,7 +155,7 @@ export default function TabsLayout() {
         }}
       />
       
-      {/* Invitations - visible to both admin and regular users */}
+      {/* Invitations - only for regular users */}
       <Tabs.Screen
         name="invitations"
         options={{
@@ -169,8 +163,10 @@ export default function TabsLayout() {
           tabBarIcon: ({ size, color }) => (
             <Mail size={size} color={color} />
           ),
+          href: !isAdmin ? undefined : null,
         }}
       />
     </Tabs>
+    </AuthGuard>
   );
 }

@@ -27,6 +27,10 @@ const validateUserAssignment = [
   body('role').isIn(['manager', 'agent']).withMessage('Role must be manager or agent')
 ];
 
+const validateCompanyStatusUpdate = [
+  body('status').isIn(['active', 'inactive']).withMessage('Status must be active or inactive')
+];
+
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -41,6 +45,34 @@ const handleValidationErrors = (req, res, next) => {
 // Apply middleware to all routes
 router.use(authenticateToken);
 router.use(apiRateLimiter);
+
+// Admin routes - Get all companies (admin only)
+router.get('/admin/all', 
+  requireRole(['admin']), 
+  companyController.getAllCompanies
+);
+
+// Admin routes - Get company details with users (admin only)
+router.get('/admin/:id', 
+  requireRole(['admin']), 
+  companyController.getAdminCompanyDetails
+);
+
+// Admin routes - Update company status (admin only)
+router.put('/admin/:id/status', 
+  requireRole(['admin']), 
+  validateCompanyStatusUpdate,
+  handleValidationErrors,
+  companyController.updateCompanyStatus
+);
+
+// Admin routes - Update company (admin only)
+router.put('/admin/:id', 
+  requireRole(['admin']), 
+  validateCompany,
+  handleValidationErrors,
+  companyController.updateCompanyAdmin
+);
 
 // Get user's companies (with pagination and filtering)
 router.get('/', companyController.getUserCompanies);

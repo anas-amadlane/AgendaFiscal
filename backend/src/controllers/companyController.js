@@ -2,6 +2,272 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { query, getOne, getMany, transaction } = require('../config/database');
 
+// Get all companies (admin only)
+const getAllCompanies = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search = '', status = '' } = req.query;
+    const offset = (page - 1) * limit;
+
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+    let paramCount = 0;
+
+    if (search) {
+      paramCount++;
+      whereClause += ` AND (c.name ILIKE $${paramCount} OR c.registration_number ILIKE $${paramCount} OR c.tax_id ILIKE $${paramCount})`;
+      params.push(`%${search}%`);
+    }
+
+    if (status) {
+      paramCount++;
+      whereClause += ` AND c.status = $${paramCount}`;
+      params.push(status);
+    }
+
+    // Get total count
+    const countResult = await query(
+      `SELECT COUNT(*) FROM companies c ${whereClause}`,
+      params
+    );
+    const total = parseInt(countResult.rows[0].count);
+
+    // Get companies with user counts
+    paramCount++;
+    const companies = await getMany(
+      `SELECT 
+        c.*,
+        u.first_name || ' ' || u.last_name as created_by_name,
+        COUNT(DISTINCT cur.user_id) as total_users,
+        COUNT(DISTINCT CASE WHEN cur.role = 'owner' THEN cur.user_id END) as owners_count,
+        COUNT(DISTINCT CASE WHEN cur.role = 'manager' THEN cur.user_id END) as managers_count,
+        COUNT(DISTINCT CASE WHEN cur.role = 'agent' THEN cur.user_id END) as agents_count
+       FROM companies c
+       LEFT JOIN users u ON c.created_by = u.id
+       LEFT JOIN company_user_roles cur ON c.id = cur.company_id
+       ${whereClause}
+       GROUP BY c.id, c.name, c.registration_number, c.tax_id, c.status, c.created_at, c.updated_at, u.first_name, u.last_name
+       ORDER BY c.created_at DESC
+       LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
+      [...params, limit, offset]
+    );
+
+    res.json({
+      companies: companies.map(company => ({
+        id: company.id,
+        name: company.name,
+        registrationNumber: company.registration_number,
+        taxId: company.tax_id,
+        status: company.status,
+        createdAt: company.created_at,
+        updatedAt: company.updated_at,
+        createdByName: company.created_by_name,
+        totalUsers: parseInt(company.total_users),
+        ownersCount: parseInt(company.owners_count),
+        managersCount: parseInt(company.managers_count),
+        agentsCount: parseInt(company.agents_count)
+      })),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+
+  } catch (error) {
+    console.error('Get all companies error:', error);
+    res.status(500).json({
+      error: 'Failed to get companies',
+      message: 'Erreur lors de la récupération des entreprises'
+    });
+  }
+};
+
+// Get company details with users (admin only)
+const getAdminCompanyDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get company details
+    const company = await getOne(`
+      SELECT c.*, u.first_name || ' ' || u.last_name as created_by_name
+      FROM companies c
+      LEFT JOIN users u ON c.created_by = u.id
+      WHERE c.id = $1
+    `, [id]);
+
+    if (!company) {
+      return res.status(404).json({
+        error: 'Company not found',
+        message: 'Entreprise non trouvée'
+      });
+    }
+
+    // Get all users associated with this company
+    const companyUsers = await getMany(`
+      SELECT 
+        cur.role,
+        cur.status,
+        cur.created_at as assigned_at,
+        u.id,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.avatar_url,
+        u.last_login_at,
+        assigner.first_name || ' ' || assigner.last_name as assigned_by_name
+      FROM company_user_roles cur
+      JOIN users u ON cur.user_id = u.id
+      LEFT JOIN users assigner ON cur.assigned_by = assigner.id
+      WHERE cur.company_id = $1
+      ORDER BY 
+        CASE cur.role 
+          WHEN 'owner' THEN 1 
+          WHEN 'manager' THEN 2 
+          WHEN 'agent' THEN 3 
+        END,
+        cur.created_at
+    `, [id]);
+
+    // Separate users by role
+    const owners = companyUsers.filter(user => user.role === 'owner');
+    const managers = companyUsers.filter(user => user.role === 'manager');
+    const agents = companyUsers.filter(user => user.role === 'agent');
+
+    res.json({
+      company: {
+        id: company.id,
+        name: company.name,
+        registrationNumber: company.registration_number,
+        taxId: company.tax_id,
+        status: company.status,
+        createdAt: company.created_at,
+        updatedAt: company.updated_at,
+        createdByName: company.created_by_name
+      },
+      users: {
+        owners,
+        managers,
+        agents,
+        total: companyUsers.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching company details:', error);
+    res.status(500).json({
+      error: 'Failed to get company details',
+      message: 'Erreur lors de la récupération des détails de l\'entreprise'
+    });
+  }
+};
+
+// Update company status (admin only)
+const updateCompanyStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    // Check if company exists
+    const existingCompany = await getOne(
+      'SELECT id, name, status FROM companies WHERE id = $1',
+      [id]
+    );
+
+    if (!existingCompany) {
+      return res.status(404).json({
+        error: 'Company not found',
+        message: 'Entreprise non trouvée'
+      });
+    }
+
+    // Update company status
+    const result = await query(
+      `UPDATE companies 
+       SET status = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, name, status, updated_at`,
+      [status, id]
+    );
+
+    const updatedCompany = result.rows[0];
+
+    res.json({
+      message: `Company ${status === 'active' ? 'activated' : 'deactivated'} successfully`,
+      company: {
+        id: updatedCompany.id,
+        name: updatedCompany.name,
+        status: updatedCompany.status,
+        updatedAt: updatedCompany.updated_at
+      }
+    });
+
+  } catch (error) {
+    console.error('Update company status error:', error);
+    res.status(500).json({
+      error: 'Failed to update company status',
+      message: 'Erreur lors de la mise à jour du statut de l\'entreprise'
+    });
+  }
+};
+
+// Update company (admin only)
+const updateCompanyAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Check if company exists
+    const existingCompany = await getOne(
+      'SELECT id, name FROM companies WHERE id = $1',
+      [id]
+    );
+
+    if (!existingCompany) {
+      return res.status(404).json({
+        error: 'Company not found',
+        message: 'Entreprise non trouvée'
+      });
+    }
+
+    // Build update query
+    const fields = Object.keys(updateData).filter(key => 
+      ['name', 'registration_number', 'tax_id', 'address', 'phone', 'email', 'website', 'industry', 'size', 'status'].includes(key)
+    );
+
+    if (fields.length === 0) {
+      return res.status(400).json({
+        error: 'No valid fields to update',
+        message: 'Aucun champ valide fourni pour la mise à jour'
+      });
+    }
+
+    const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+    const values = [id, ...fields.map(field => updateData[field])];
+
+    const updateQuery = `
+      UPDATE companies 
+      SET ${setClause}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *
+    `;
+
+    const updatedCompany = await getOne(updateQuery, values);
+
+    res.json({
+      message: 'Company updated successfully',
+      company: updatedCompany
+    });
+
+  } catch (error) {
+    console.error('Error updating company:', error);
+    res.status(500).json({
+      error: 'Failed to update company',
+      message: 'Erreur lors de la mise à jour de l\'entreprise'
+    });
+  }
+};
+
 // Create a new company
 const createCompany = async (req, res) => {
   try {
@@ -443,5 +709,9 @@ module.exports = {
   getCompanyDetails,
   updateCompany,
   assignUserToCompany,
-  removeUserFromCompany
+  removeUserFromCompany,
+  getAllCompanies,
+  getAdminCompanyDetails,
+  updateCompanyStatus,
+  updateCompanyAdmin
 };

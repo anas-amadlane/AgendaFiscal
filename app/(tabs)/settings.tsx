@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, Moon, Globe, Shield, Download, Upload, CircleHelp as HelpCircle, Mail, Info, ChevronRight, Search, MoveHorizontal as MoreHorizontal, User, LogOut, CreditCard as Edit3, Users, Sun, Languages } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,7 +13,7 @@ import { UserRole } from '@/types/auth';
 import { defaultNotificationSettings, NotificationSettings } from '@/utils/notificationService';
 
 export default function SettingsScreen() {
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, updateProfile, isAuthenticated, isLoading } = useAuth();
   const { theme, strings, isRTL, toggleTheme, setLanguage, language } = useApp();
   const [showAgentManagement, setShowAgentManagement] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
@@ -43,21 +43,22 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Déconnexion',
-      'Êtes-vous sûr de vouloir vous déconnecter ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { 
-          text: 'Déconnecter', 
-          style: 'destructive',
-          onPress: () => {
-            logout();
-            router.replace('/(auth)/login');
-          }
-        }
-      ]
-    );
+    if (confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
+      performLogout();
+    }
+  };
+
+  const performLogout = async () => {
+    try {
+      await logout();
+      
+      // Add a fallback redirect after a short delay
+      setTimeout(() => {
+        router.replace('/(auth)/login');
+      }, 200);
+    } catch (error) {
+      alert('Erreur lors de la déconnexion. Veuillez réessayer.');
+    }
   };
 
   const handleEditProfile = () => {
@@ -324,8 +325,8 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Management Section - Only for Managers */}
-        {user?.role === UserRole.MANAGER && (
+        {/* Management Section - Only for Admins */}
+        {user?.role === UserRole.ADMIN && (
           <View style={styles.section}>
             <Text style={styles.sectionHeader}>Gestion</Text>
             <View style={styles.settingsGroup}>

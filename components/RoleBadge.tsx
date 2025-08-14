@@ -35,7 +35,7 @@ export default function RoleBadge({ role, size = 'medium' }: RoleBadgeProps) {
           textColor: '#065F46',
           borderColor: '#10B981'
         };
-      case UserRole.USER:
+      case UserRole.REGULAR:
       default:
         return {
           label: 'Utilisateur',

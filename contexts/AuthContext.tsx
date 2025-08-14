@@ -20,35 +20,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const checkAuthState = async () => {
     try {
-      // Check for demo mode first
-      const isDemoMode = localStorage.getItem('demoMode') === 'true';
-      if (isDemoMode) {
-        const demoUser: User = {
-          id: 'demo-1',
-          email: 'demo@example.com',
-          firstName: 'Demo',
-          lastName: 'User',
-          role: UserRole.MANAGER,
-          status: 'active',
-          createdAt: new Date('2024-01-01'),
-          updatedAt: new Date('2024-01-01'),
-          lastLoginAt: new Date()
-        };
-        
-        setUser(demoUser);
-        setIsLoading(false);
-        return;
-      }
-
-      // Check for stored auth token
+      console.log('🔍 Checking auth state...');
+      // Check for stored auth token first
       const storedToken = localStorage.getItem('authToken');
-      if (storedToken) {
+      const isDemoMode = localStorage.getItem('demoMode') === 'true';
+      
+      console.log('📋 Auth state check:', { storedToken: !!storedToken, isDemoMode });
+      
+      if (storedToken && !isDemoMode) {
+        console.log('🔑 Found valid token, checking profile...');
         // Set token in API proxy
         apiProxy.setTokens(storedToken, localStorage.getItem('refreshToken') || '');
         
         try {
-          // Try to get user profile
+          // Try to get user profile from backend
           const profile = await apiProxy.getProfile();
+          console.log('✅ Profile fetched successfully:', profile);
           const user: User = {
             id: profile.id,
             email: profile.email,
@@ -63,22 +50,48 @@ export function AuthProvider({ children }: AuthProviderProps) {
           
           setUser(user);
           setIsLoading(false);
-        } catch (profileError) {
-          console.error('Profile fetch error:', profileError);
+          console.log('✅ User authenticated:', user);
+          return;
+        } catch (profileError: any) {
+          console.error('❌ Profile fetch error:', profileError);
           // If profile fetch fails, clear tokens and continue as unauthenticated
           localStorage.removeItem('authToken');
           localStorage.removeItem('refreshToken');
           apiProxy.clearTokens();
           setIsLoading(false);
+          console.log('🧹 Cleared invalid tokens');
+          return;
         }
-      } else {
+      } else if (isDemoMode && storedToken === 'demo-token') {
+        console.log('🎭 Restoring demo mode...');
+        // Only restore demo mode if explicitly set and token matches
+        const demoUser: User = {
+          id: 'demo-1',
+          email: 'demo@example.com',
+          firstName: 'Demo',
+          lastName: 'User',
+          role: UserRole.ADMIN,
+          status: 'active',
+          createdAt: new Date('2024-01-01'),
+          updatedAt: new Date('2024-01-01'),
+          lastLoginAt: new Date()
+        };
+        
+        setUser(demoUser);
         setIsLoading(false);
+        console.log('✅ Demo user restored:', demoUser);
+        return;
       }
-    } catch (error) {
-      console.error('Auth check error:', error);
+      
+      // No valid authentication found
+      console.log('❌ No valid authentication found');
+      setIsLoading(false);
+    } catch (error: any) {
+      console.error('❌ Auth check error:', error);
       // Clear invalid tokens
       localStorage.removeItem('authToken');
       localStorage.removeItem('refreshToken');
+      localStorage.removeItem('demoMode');
       apiProxy.clearTokens();
       
       setIsLoading(false);
@@ -109,38 +122,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       localStorage.setItem('authToken', response.tokens.accessToken);
       localStorage.setItem('refreshToken', response.tokens.refreshToken);
+      // Clear any existing demo mode
+      localStorage.removeItem('demoMode');
 
       console.log('Setting user in context:', user);
       setUser(user);
       setIsLoading(false);
       console.log('User set, loading set to false');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
       console.log('Error message:', error.message);
       console.log('Error status:', error.status);
       
       // Check if it's a network error (backend not available)
       if (error.message.includes('fetch') || error.message.includes('network')) {
-        // Fallback to demo mode with mock data
-        console.log('Backend not available, using demo mode');
-        
-        const demoUser: User = {
-          id: 'demo-1',
-          email: credentials.email,
-          firstName: 'Demo',
-          lastName: 'User',
-          role: UserRole.REGULAR,
-          status: 'active',
-          createdAt: new Date('2024-01-01'),
-          updatedAt: new Date('2024-01-01'),
-          lastLoginAt: new Date()
-        };
+        // Ask user if they want to use demo mode
+        if (window.confirm('Le serveur n\'est pas disponible. Voulez-vous utiliser le mode démo ?')) {
+          console.log('User chose demo mode');
+          
+          const demoUser: User = {
+            id: 'demo-1',
+            email: credentials.email,
+            firstName: 'Demo',
+            lastName: 'User',
+            role: UserRole.REGULAR,
+            status: 'active',
+            createdAt: new Date('2024-01-01'),
+            updatedAt: new Date('2024-01-01'),
+            lastLoginAt: new Date()
+          };
 
-        localStorage.setItem('demoMode', 'true');
-        localStorage.setItem('authToken', 'demo-token');
+          localStorage.setItem('demoMode', 'true');
+          localStorage.setItem('authToken', 'demo-token');
 
-        setUser(demoUser);
-        setIsLoading(false);
+          setUser(demoUser);
+          setIsLoading(false);
+        } else {
+          setIsLoading(false);
+          setError('Impossible de se connecter au serveur. Veuillez réessayer plus tard.');
+        }
       } else {
         setIsLoading(false);
         // Handle specific backend errors
@@ -178,36 +198,43 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       localStorage.setItem('authToken', response.tokens.accessToken);
       localStorage.setItem('refreshToken', response.tokens.refreshToken);
+      // Clear any existing demo mode
+      localStorage.removeItem('demoMode');
 
       setUser(newUser);
       setIsLoading(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Register error:', error);
       console.log('Error message:', error.message);
       console.log('Error status:', error.status);
       
       // Check if it's a network error (backend not available)
       if (error.message.includes('fetch') || error.message.includes('network')) {
-        // Fallback to demo mode with mock data
-        console.log('Backend not available, using demo mode for registration');
-        
-        const demoUser: User = {
-          id: 'demo-' + Date.now(),
-          email: data.email,
-          firstName: data.firstName,
-          lastName: data.lastName,
-          role: UserRole.REGULAR,
-          status: 'active',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          lastLoginAt: new Date()
-        };
+        // Ask user if they want to use demo mode
+        if (window.confirm('Le serveur n\'est pas disponible. Voulez-vous créer un compte en mode démo ?')) {
+          console.log('User chose demo mode for registration');
+          
+          const demoUser: User = {
+            id: 'demo-' + Date.now(),
+            email: data.email,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            role: UserRole.REGULAR,
+            status: 'active',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            lastLoginAt: new Date()
+          };
 
-        localStorage.setItem('demoMode', 'true');
-        localStorage.setItem('authToken', 'demo-token');
+          localStorage.setItem('demoMode', 'true');
+          localStorage.setItem('authToken', 'demo-token');
 
-        setUser(demoUser);
-        setIsLoading(false);
+          setUser(demoUser);
+          setIsLoading(false);
+        } else {
+          setIsLoading(false);
+          setError('Impossible de se connecter au serveur. Veuillez réessayer plus tard.');
+        }
       } else {
         setIsLoading(false);
         // Handle specific backend errors
@@ -231,14 +258,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const logout = async () => {
     try {
-      await apiProxy.logout();
-    } catch (error) {
+      // Only call logout API if not in demo mode
+      const isDemoMode = localStorage.getItem('demoMode') === 'true';
+      if (!isDemoMode) {
+        await apiProxy.logout();
+      }
+    } catch (error: any) {
       console.error('Logout error:', error);
     } finally {
+      // Clear all authentication data
       localStorage.removeItem('authToken');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('demoMode');
       apiProxy.clearTokens();
+      
+      // Add a small delay to ensure state changes are propagated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       setUser(null);
       setIsLoading(false);
       setError(null);

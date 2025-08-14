@@ -1,12 +1,20 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// Debug environment variables
+console.log('Database Configuration:');
+console.log('DB_HOST:', process.env.DB_HOST);
+console.log('DB_PORT:', process.env.DB_PORT);
+console.log('DB_NAME:', process.env.DB_NAME);
+console.log('DB_USER:', process.env.DB_USER);
+console.log('DB_PASSWORD:', process.env.DB_PASSWORD ? '***SET***' : '***NOT SET***');
+
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
+  port: parseInt(process.env.DB_PORT) || 5432,
   database: process.env.DB_NAME || 'agenda_fiscal',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD,
+  password: process.env.DB_PASSWORD || '',
   ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
   max: 20, // Maximum number of clients in the pool
   idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
@@ -65,10 +73,40 @@ const transaction = async (callback) => {
   }
 };
 
+// CRUD helper functions
+const create = async (table, data) => {
+  const columns = Object.keys(data);
+  const values = Object.values(data);
+  const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
+  
+  const queryText = `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`;
+  const result = await query(queryText, values);
+  return result.rows[0];
+};
+
+const update = async (table, id, data) => {
+  const columns = Object.keys(data);
+  const values = Object.values(data);
+  const setClause = columns.map((col, index) => `${col} = $${index + 1}`).join(', ');
+  
+  const queryText = `UPDATE ${table} SET ${setClause}, updated_at = NOW() WHERE id = $${values.length + 1} RETURNING *`;
+  const result = await query(queryText, [...values, id]);
+  return result.rows[0];
+};
+
+const remove = async (table, id) => {
+  const queryText = `DELETE FROM ${table} WHERE id = $1`;
+  await query(queryText, [id]);
+  return { success: true };
+};
+
 module.exports = {
   pool,
   query,
   getOne,
   getMany,
-  transaction
+  transaction,
+  create,
+  update,
+  remove
 }; 

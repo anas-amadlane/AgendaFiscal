@@ -2,8 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
+const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
+
+const { pool } = require('./config/database');
 
 // Import middleware
 const { apiRateLimiter, authRateLimiter, registrationRateLimiter } = require('./middleware/auth');
@@ -17,6 +21,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const notificationRoutes = require('./routes/notifications');
 const invitationRoutes = require('./routes/invitations');
 const fiscalRoutes = require('./routes/fiscal');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -51,6 +56,25 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Session configuration
+app.use(session({
+  store: new pgSession({
+    pool,
+    tableName: 'user_sessions'
+  }),
+  secret: process.env.SESSION_SECRET || 'your-session-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  }
+}));
+
+// Make database available to request object
+app.locals.db = pool;
+
 // Trust proxy for rate limiting
 app.set('trust proxy', 1);
 
@@ -62,6 +86,7 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
     version: process.env.npm_package_version || '1.0.0'
   });
@@ -82,6 +107,7 @@ app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 app.use(`${apiPrefix}/notifications`, notificationRoutes);
 app.use(`${apiPrefix}/invitations`, invitationRoutes);
 app.use(`${apiPrefix}/fiscal`, fiscalRoutes);
+app.use(`${apiPrefix}/admin`, adminRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -125,6 +151,30 @@ app.use((error, req, res, next) => {
       error: 'Validation error',
       message: 'Données invalides',
       details: error.message
+    });
+  }
+
+  // Unauthorized errors
+  if (error.name === 'UnauthorizedError') {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Non autorisé'
+    });
+  }
+
+  // PostgreSQL unique constraint violation
+  if (error.code === '23505') {
+    return res.status(409).json({
+      error: 'Resource already exists',
+      message: 'La ressource existe déjà'
+    });
+  }
+
+  // PostgreSQL foreign key constraint violation
+  if (error.code === '23503') {
+    return res.status(400).json({
+      error: 'Invalid reference',
+      message: 'Référence invalide'
     });
   }
 

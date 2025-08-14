@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, Switch } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
 import { User, UserRole } from '@/types/auth';
@@ -18,7 +18,7 @@ export default function AdminUsers() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserWithStats | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [modalType, setModalType] = useState<'edit' | 'password' | 'delete'>('edit');
+  const [modalType, setModalType] = useState<'edit' | 'password' | 'delete' | 'create'>('edit');
   const [loading, setLoading] = useState(true);
 
   // Form states
@@ -26,17 +26,39 @@ export default function AdminUsers() {
     firstName: '',
     lastName: '',
     email: '',
-    role: 'regular' as UserRole,
+    role: UserRole.REGULAR,
     isActive: true
+  });
+  const [createForm, setCreateForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    role: UserRole.REGULAR
   });
   const [passwordForm, setPasswordForm] = useState({
     newPassword: '',
     confirmPassword: ''
   });
 
+  // Validation states
+  const [createErrors, setCreateErrors] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    confirmPassword: ''
+  });
+  const [editErrors, setEditErrors] = useState({
+    firstName: '',
+    lastName: '',
+    email: ''
+  });
+
   // Check if user is admin
   useEffect(() => {
-    if (user?.role !== 'admin') {
+    if (user?.role !== UserRole.ADMIN) {
       router.replace('/(tabs)');
       return;
     }
@@ -56,53 +78,21 @@ export default function AdminUsers() {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/v1/admin/users');
+      const token = localStorage.getItem('authToken');
       
-      // Mock data
-      const mockUsers: UserWithStats[] = [
-        {
-          id: '1',
-          firstName: 'John',
-          lastName: 'Doe',
-          email: 'john@example.com',
-          role: 'regular',
-          status: 'active',
-          createdAt: new Date('2024-01-15'),
-          updatedAt: new Date('2024-01-15'),
-          lastLoginAt: new Date('2024-01-20'),
-          companiesCount: 2,
-          isActive: true
-        },
-        {
-          id: '2',
-          firstName: 'Jane',
-          lastName: 'Smith',
-          email: 'jane@example.com',
-          role: 'admin',
-          status: 'active',
-          createdAt: new Date('2024-01-10'),
-          updatedAt: new Date('2024-01-10'),
-          lastLoginAt: new Date('2024-01-21'),
-          companiesCount: 5,
-          isActive: true
-        },
-        {
-          id: '3',
-          firstName: 'Bob',
-          lastName: 'Johnson',
-          email: 'bob@example.com',
-          role: 'regular',
-          status: 'inactive',
-          createdAt: new Date('2024-01-05'),
-          updatedAt: new Date('2024-01-05'),
-          lastLoginAt: new Date('2024-01-18'),
-          companiesCount: 1,
-          isActive: false
+      const response = await fetch('http://localhost:3001/api/v1/users', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
-      ];
+      });
 
-      setUsers(mockUsers);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setUsers(data.users);
     } catch (error) {
       console.error('Error loading users:', error);
       Alert.alert('Error', 'Failed to load users');
@@ -111,12 +101,26 @@ export default function AdminUsers() {
     }
   };
 
-  const openModal = (type: 'edit' | 'password' | 'delete', user: UserWithStats) => {
-    setSelectedUser(user);
+  const openModal = (type: 'edit' | 'password' | 'delete' | 'create', user?: UserWithStats) => {
     setModalType(type);
     setModalVisible(true);
 
-    if (type === 'edit') {
+    // Clear errors when opening modal
+    setCreateErrors({
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      confirmPassword: ''
+    });
+    setEditErrors({
+      firstName: '',
+      lastName: '',
+      email: ''
+    });
+
+    if (type === 'edit' && user) {
+      setSelectedUser(user);
       setEditForm({
         firstName: user.firstName,
         lastName: user.lastName,
@@ -124,10 +128,23 @@ export default function AdminUsers() {
         role: user.role,
         isActive: user.isActive
       });
-    } else if (type === 'password') {
+    } else if (type === 'password' && user) {
+      setSelectedUser(user);
       setPasswordForm({
         newPassword: '',
         confirmPassword: ''
+      });
+    } else if (type === 'delete' && user) {
+      setSelectedUser(user);
+    } else if (type === 'create') {
+      setSelectedUser(null);
+      setCreateForm({
+        firstName: '',
+        lastName: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+        role: UserRole.REGULAR
       });
     }
   };
@@ -135,56 +152,166 @@ export default function AdminUsers() {
   const closeModal = () => {
     setModalVisible(false);
     setSelectedUser(null);
+    
+    // Clear errors when closing modal
+    setCreateErrors({
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      confirmPassword: ''
+    });
+    setEditErrors({
+      firstName: '',
+      lastName: '',
+      email: ''
+    });
+  };
+
+  const handleCreateUser = async () => {
+    if (!validateCreateForm()) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      
+      const response = await fetch('http://localhost:3001/api/v1/users', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          firstName: createForm.firstName,
+          lastName: createForm.lastName,
+          email: createForm.email,
+          password: createForm.password,
+          role: createForm.role
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 409 && errorData.error === 'Email already exists') {
+          // Set email error in the form
+          setCreateErrors(prev => ({
+            ...prev,
+            email: 'This email is already registered'
+          }));
+          return;
+        }
+        throw new Error(errorData.message || 'Failed to create user');
+      }
+
+      const data = await response.json();
+      Alert.alert('Success', data.message);
+      closeModal();
+      // Clear form and errors
+      setCreateForm({
+        firstName: '',
+        lastName: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+        role: UserRole.REGULAR
+      });
+      setCreateErrors({
+        firstName: '',
+        lastName: '',
+        email: '',
+        password: '',
+        confirmPassword: ''
+      });
+      loadUsers(); // Reload users list
+    } catch (error) {
+      console.error('Error creating user:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create user';
+      Alert.alert('Error', errorMessage);
+    }
   };
 
   const handleEditUser = async () => {
+    if (!validateEditForm()) {
+      return;
+    }
+
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/v1/admin/users/${selectedUser?.id}`, {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(editForm)
-      // });
+      const token = localStorage.getItem('authToken');
+      
+      const response = await fetch(`http://localhost:3001/api/v1/users/${selectedUser?.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(editForm)
+      });
 
-      // Update local state
-      setUsers(users.map(u => 
-        u.id === selectedUser?.id 
-          ? { ...u, ...editForm }
-          : u
-      ));
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 409 && errorData.error === 'Email already exists') {
+          // Set email error in the form
+          setEditErrors(prev => ({
+            ...prev,
+            email: 'This email is already registered by another user'
+          }));
+          return;
+        }
+        throw new Error(errorData.message || 'Failed to update user');
+      }
 
-      Alert.alert('Success', 'User updated successfully');
+      const data = await response.json();
+      Alert.alert('Success', data.message);
       closeModal();
+      loadUsers(); // Reload users list
     } catch (error) {
       console.error('Error updating user:', error);
-      Alert.alert('Error', 'Failed to update user');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update user';
+      Alert.alert('Error', errorMessage);
     }
   };
 
   const handleChangePassword = async () => {
+    if (!passwordForm.newPassword) {
+      Alert.alert('Error', 'New password is required');
+      return;
+    }
+
+    if (!validatePassword(passwordForm.newPassword)) {
+      Alert.alert('Error', 'Password must be at least 8 characters long');
+      return;
+    }
+
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
 
-    if (passwordForm.newPassword.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters long');
-      return;
-    }
-
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/v1/admin/users/${selectedUser?.id}/password`, {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ newPassword: passwordForm.newPassword })
-      // });
+      const token = localStorage.getItem('authToken');
+      
+      const response = await fetch(`http://localhost:3001/api/v1/users/${selectedUser?.id}/password`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ newPassword: passwordForm.newPassword })
+      });
 
-      Alert.alert('Success', 'Password changed successfully');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to change password');
+      }
+
+      const data = await response.json();
+      Alert.alert('Success', data.message);
       closeModal();
     } catch (error) {
       console.error('Error changing password:', error);
-      Alert.alert('Error', 'Failed to change password');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to change password';
+      Alert.alert('Error', errorMessage);
     }
   };
 
@@ -199,19 +326,29 @@ export default function AdminUsers() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // TODO: Replace with actual API call
-              // await fetch(`/api/v1/admin/users/${selectedUser?.id}`, {
-              //   method: 'DELETE'
-              // });
+              const token = localStorage.getItem('authToken');
+              
+              const response = await fetch(`http://localhost:3001/api/v1/users/${selectedUser?.id}`, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              });
 
-              // Update local state
-              setUsers(users.filter(u => u.id !== selectedUser?.id));
+              if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to delete user');
+              }
 
-              Alert.alert('Success', 'User deleted successfully');
+              const data = await response.json();
+              Alert.alert('Success', data.message);
               closeModal();
+              loadUsers(); // Reload users list
             } catch (error) {
               console.error('Error deleting user:', error);
-              Alert.alert('Error', 'Failed to delete user');
+              const errorMessage = error instanceof Error ? error.message : 'Failed to delete user';
+              Alert.alert('Error', errorMessage);
             }
           }
         }
@@ -220,14 +357,97 @@ export default function AdminUsers() {
   };
 
   const getRoleColor = (role: UserRole) => {
-    return role === 'admin' ? '#EF4444' : '#3B82F6';
+    return role === UserRole.ADMIN ? '#EF4444' : '#3B82F6';
   };
 
   const getStatusColor = (status: string) => {
     return status === 'active' ? '#10B981' : '#EF4444';
   };
 
-  if (user?.role !== 'admin') {
+  // Validation functions
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const validatePassword = (password: string) => {
+    return password.length >= 8;
+  };
+
+  const validateCreateForm = () => {
+    const errors = {
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      confirmPassword: ''
+    };
+
+    if (!createForm.firstName.trim()) {
+      errors.firstName = 'First name is required';
+    }
+
+    if (!createForm.lastName.trim()) {
+      errors.lastName = 'Last name is required';
+    }
+
+    if (!createForm.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!validateEmail(createForm.email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+
+    if (!createForm.password) {
+      errors.password = 'Password is required';
+    } else if (!validatePassword(createForm.password)) {
+      errors.password = 'Password must be at least 8 characters long';
+    }
+
+    if (!createForm.confirmPassword) {
+      errors.confirmPassword = 'Please confirm your password';
+    } else if (createForm.password !== createForm.confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
+
+    setCreateErrors(errors);
+    return !Object.values(errors).some(error => error !== '');
+  };
+
+  const validateEditForm = () => {
+    const errors = {
+      firstName: '',
+      lastName: '',
+      email: ''
+    };
+
+    if (!editForm.firstName.trim()) {
+      errors.firstName = 'First name is required';
+    }
+
+    if (!editForm.lastName.trim()) {
+      errors.lastName = 'Last name is required';
+    }
+
+    if (!editForm.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!validateEmail(editForm.email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+
+    setEditErrors(errors);
+    return !Object.values(errors).some(error => error !== '');
+  };
+
+  // Clear email errors when user starts typing
+  const clearEmailError = (formType: 'create' | 'edit') => {
+    if (formType === 'create') {
+      setCreateErrors(prev => ({ ...prev, email: '' }));
+    } else {
+      setEditErrors(prev => ({ ...prev, email: '' }));
+    }
+  };
+
+  if (user?.role !== UserRole.ADMIN) {
     return null;
   }
 
@@ -235,11 +455,11 @@ export default function AdminUsers() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
         <Text style={styles.title}>User Management</Text>
-        <TouchableOpacity style={styles.addButton}>
+        <TouchableOpacity 
+          style={styles.addButton}
+          onPress={() => openModal('create')}
+        >
           <Plus size={20} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
@@ -260,60 +480,178 @@ export default function AdminUsers() {
 
       {/* Users List */}
       <ScrollView style={styles.usersList}>
-        {filteredUsers.map((user) => (
-          <View key={user.id} style={styles.userCard}>
-            <View style={styles.userInfo}>
-              <View style={styles.userHeader}>
-                <Text style={styles.userName}>
-                  {user.firstName} {user.lastName}
-                </Text>
-                <View style={styles.badges}>
-                  <View style={[styles.roleBadge, { backgroundColor: getRoleColor(user.role) }]}>
-                    <Text style={styles.roleText}>{user.role}</Text>
-                  </View>
-                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(user.status) }]}>
-                    <Text style={styles.statusText}>{user.status}</Text>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading users...</Text>
+          </View>
+        ) : filteredUsers.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No users found</Text>
+          </View>
+        ) : (
+          filteredUsers.map((user) => (
+            <View key={user.id} style={styles.userCard}>
+              <View style={styles.userInfo}>
+                <View style={styles.userHeader}>
+                  <Text style={styles.userName}>
+                    {user.firstName} {user.lastName}
+                  </Text>
+                  <View style={styles.badges}>
+                    <View style={[styles.roleBadge, { backgroundColor: getRoleColor(user.role) }]}>
+                      <Text style={styles.roleText}>{user.role}</Text>
+                    </View>
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(user.isActive ? 'active' : 'inactive') }]}>
+                      <Text style={styles.statusText}>{user.isActive ? 'active' : 'inactive'}</Text>
+                    </View>
                   </View>
                 </View>
+                
+                <Text style={styles.userEmail}>{user.email}</Text>
+                
+                <View style={styles.userStats}>
+                  <Text style={styles.statText}>
+                    Companies: {user.companiesCount || 0}
+                  </Text>
+                  <Text style={styles.statText}>
+                    Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : 'Never'}
+                  </Text>
+                </View>
               </View>
-              
-              <Text style={styles.userEmail}>{user.email}</Text>
-              
-              <View style={styles.userStats}>
-                <Text style={styles.statText}>
-                  Companies: {user.companiesCount}
-                </Text>
-                <Text style={styles.statText}>
-                  Last login: {user.lastLoginAt ? user.lastLoginAt.toLocaleDateString() : 'Never'}
-                </Text>
+
+              <View style={styles.userActions}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => openModal('edit', user)}
+                >
+                  <Edit size={16} color="#3B82F6" />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => openModal('password', user)}
+                >
+                  <Eye size={16} color="#10B981" />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.actionButton, styles.deleteButton]}
+                  onPress={() => openModal('delete', user)}
+                >
+                  <Trash2 size={16} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      {/* Create User Modal */}
+      <Modal
+        visible={modalVisible && modalType === 'create'}
+        animationType="slide"
+        transparent={true}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Create New User</Text>
+            
+            <TextInput
+              style={[styles.input, createErrors.firstName && styles.inputError]}
+              placeholder="First Name"
+              value={createForm.firstName}
+              onChangeText={(text) => setCreateForm({...createForm, firstName: text})}
+            />
+            {createErrors.firstName ? (
+              <Text style={styles.errorText}>{createErrors.firstName}</Text>
+            ) : null}
+            
+            <TextInput
+              style={[styles.input, createErrors.lastName && styles.inputError]}
+              placeholder="Last Name"
+              value={createForm.lastName}
+              onChangeText={(text) => setCreateForm({...createForm, lastName: text})}
+            />
+            {createErrors.lastName ? (
+              <Text style={styles.errorText}>{createErrors.lastName}</Text>
+            ) : null}
+            
+            <TextInput
+              style={[styles.input, createErrors.email && styles.inputError]}
+              placeholder="Email"
+              value={createForm.email}
+              onChangeText={(text) => {
+                setCreateForm({...createForm, email: text});
+                clearEmailError('create');
+              }}
+              keyboardType="email-address"
+            />
+            {createErrors.email ? (
+              <Text style={styles.errorText}>{createErrors.email}</Text>
+            ) : null}
+
+            <TextInput
+              style={[styles.input, createErrors.password && styles.inputError]}
+              placeholder="Password"
+              value={createForm.password}
+              onChangeText={(text) => setCreateForm({...createForm, password: text})}
+              secureTextEntry
+            />
+            {createErrors.password ? (
+              <Text style={styles.errorText}>{createErrors.password}</Text>
+            ) : null}
+
+            <TextInput
+              style={[styles.input, createErrors.confirmPassword && styles.inputError]}
+              placeholder="Confirm Password"
+              value={createForm.confirmPassword}
+              onChangeText={(text) => setCreateForm({...createForm, confirmPassword: text})}
+              secureTextEntry
+            />
+            {createErrors.confirmPassword ? (
+              <Text style={styles.errorText}>{createErrors.confirmPassword}</Text>
+            ) : null}
+
+            <View style={styles.roleSelector}>
+              <Text style={styles.label}>Role:</Text>
+              <View style={styles.roleOptions}>
+                <TouchableOpacity
+                  style={[
+                    styles.roleOption,
+                    createForm.role === UserRole.REGULAR && styles.roleOptionSelected
+                  ]}
+                  onPress={() => setCreateForm({...createForm, role: UserRole.REGULAR})}
+                >
+                  <Text style={[
+                    styles.roleOptionText,
+                    createForm.role === UserRole.REGULAR && styles.roleOptionTextSelected
+                  ]}>Regular</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.roleOption,
+                    createForm.role === UserRole.ADMIN && styles.roleOptionSelected
+                  ]}
+                  onPress={() => setCreateForm({...createForm, role: UserRole.ADMIN})}
+                >
+                  <Text style={[
+                    styles.roleOptionText,
+                    createForm.role === UserRole.ADMIN && styles.roleOptionTextSelected
+                  ]}>Admin</Text>
+                </TouchableOpacity>
               </View>
             </View>
 
-            <View style={styles.userActions}>
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => openModal('edit', user)}
-              >
-                <Edit size={16} color="#3B82F6" />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => openModal('password', user)}
-              >
-                <Eye size={16} color="#10B981" />
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={() => openModal('delete', user)}
-              >
-                <Trash2 size={16} color="#EF4444" />
+              <TouchableOpacity style={styles.saveButton} onPress={handleCreateUser}>
+                <Text style={styles.saveButtonText}>Create User</Text>
               </TouchableOpacity>
             </View>
           </View>
-        ))}
-      </ScrollView>
+        </View>
+      </Modal>
 
       {/* Edit User Modal */}
       <Modal
@@ -326,26 +664,38 @@ export default function AdminUsers() {
             <Text style={styles.modalTitle}>Edit User</Text>
             
             <TextInput
-              style={styles.input}
+              style={[styles.input, editErrors.firstName && styles.inputError]}
               placeholder="First Name"
               value={editForm.firstName}
               onChangeText={(text) => setEditForm({...editForm, firstName: text})}
             />
+            {editErrors.firstName ? (
+              <Text style={styles.errorText}>{editErrors.firstName}</Text>
+            ) : null}
             
             <TextInput
-              style={styles.input}
+              style={[styles.input, editErrors.lastName && styles.inputError]}
               placeholder="Last Name"
               value={editForm.lastName}
               onChangeText={(text) => setEditForm({...editForm, lastName: text})}
             />
+            {editErrors.lastName ? (
+              <Text style={styles.errorText}>{editErrors.lastName}</Text>
+            ) : null}
             
             <TextInput
-              style={styles.input}
+              style={[styles.input, editErrors.email && styles.inputError]}
               placeholder="Email"
               value={editForm.email}
-              onChangeText={(text) => setEditForm({...editForm, email: text})}
+              onChangeText={(text) => {
+                setEditForm({...editForm, email: text});
+                clearEmailError('edit');
+              }}
               keyboardType="email-address"
             />
+            {editErrors.email ? (
+              <Text style={styles.errorText}>{editErrors.email}</Text>
+            ) : null}
 
             <View style={styles.roleSelector}>
               <Text style={styles.label}>Role:</Text>
@@ -353,27 +703,45 @@ export default function AdminUsers() {
                 <TouchableOpacity
                   style={[
                     styles.roleOption,
-                    editForm.role === 'regular' && styles.roleOptionSelected
+                    editForm.role === UserRole.REGULAR && styles.roleOptionSelected
                   ]}
-                  onPress={() => setEditForm({...editForm, role: 'regular'})}
+                  onPress={() => setEditForm({...editForm, role: UserRole.REGULAR})}
                 >
                   <Text style={[
                     styles.roleOptionText,
-                    editForm.role === 'regular' && styles.roleOptionTextSelected
+                    editForm.role === UserRole.REGULAR && styles.roleOptionTextSelected
                   ]}>Regular</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
                     styles.roleOption,
-                    editForm.role === 'admin' && styles.roleOptionSelected
+                    editForm.role === UserRole.ADMIN && styles.roleOptionSelected
                   ]}
-                  onPress={() => setEditForm({...editForm, role: 'admin'})}
+                  onPress={() => setEditForm({...editForm, role: UserRole.ADMIN})}
                 >
                   <Text style={[
                     styles.roleOptionText,
-                    editForm.role === 'admin' && styles.roleOptionTextSelected
+                    editForm.role === UserRole.ADMIN && styles.roleOptionTextSelected
                   ]}>Admin</Text>
                 </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.statusToggle}>
+              <Text style={styles.statusLabel}>Status:</Text>
+              <View style={styles.statusToggleContainer}>
+                <Text style={styles.statusToggleText}>
+                  {editForm.isActive ? 'Active' : 'Inactive'}
+                </Text>
+                <Switch
+                  value={editForm.isActive}
+                  onValueChange={(value) => {
+                    console.log('Switch value changed:', value);
+                    setEditForm({...editForm, isActive: value});
+                  }}
+                  trackColor={{ false: '#E5E7EB', true: '#10B981' }}
+                  thumbColor={editForm.isActive ? '#FFFFFF' : '#FFFFFF'}
+                />
               </View>
             </View>
 
@@ -475,18 +843,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
-  backButton: {
-    padding: 8,
-  },
-  backText: {
-    fontSize: 16,
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#1E293B',
+    flex: 1,
+    textAlign: 'left',
   },
   addButton: {
     backgroundColor: '#3B82F6',
@@ -520,6 +882,26 @@ const styles = StyleSheet.create({
   usersList: {
     flex: 1,
     padding: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#64748B',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#64748B',
   },
   userCard: {
     backgroundColor: '#FFFFFF',
@@ -637,6 +1019,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     color: '#1E293B',
   },
+  inputError: {
+    borderColor: '#EF4444',
+    borderWidth: 1,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    marginTop: -10,
+    marginBottom: 10,
+  },
   roleSelector: {
     marginBottom: 16,
   },
@@ -669,6 +1061,30 @@ const styles = StyleSheet.create({
   },
   roleOptionTextSelected: {
     color: '#FFFFFF',
+  },
+  statusToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  statusLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  statusToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E5E7EB',
+    padding: 8,
+    borderRadius: 8,
+  },
+  statusToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginRight: 10,
   },
   modalActions: {
     flexDirection: 'row',

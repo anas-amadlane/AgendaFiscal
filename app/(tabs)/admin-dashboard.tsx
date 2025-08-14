@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
-import { User, CompanyRole } from '@/types/auth';
+import { User, CompanyRole, UserRole } from '@/types/auth';
 import { Users, Building2, UserCheck, UserX, TrendingUp, Activity } from 'lucide-react-native';
+import { Redirect } from 'expo-router';
 
 interface AdminStats {
   totalUsers: number;
@@ -24,7 +25,7 @@ interface CompanyWithUsers {
 }
 
 export default function AdminDashboard() {
-  const { user } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   const [stats, setStats] = useState<AdminStats>({
     totalUsers: 0,
     activeUsers: 0,
@@ -36,66 +37,111 @@ export default function AdminDashboard() {
   const [companies, setCompanies] = useState<CompanyWithUsers[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Check if user is admin
+  // Authentication and admin role are handled by AuthGuard in the layout
+  console.log('🔍 AdminDashboard: Current user:', user);
+  console.log('🔍 AdminDashboard: Is authenticated:', isAuthenticated);
+  console.log('🔍 AdminDashboard: User role:', user?.role);
+
+  // Load data when component mounts
   useEffect(() => {
-    if (user?.role !== 'admin') {
-      router.replace('/(tabs)');
-      return;
-    }
     loadDashboardData();
-  }, [user]);
+  }, []);
 
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with actual API calls
-      // const statsResponse = await fetch('/api/v1/admin/stats');
-      // const companiesResponse = await fetch('/api/v1/admin/companies');
       
-      // Mock data for now
+      const token = localStorage.getItem('authToken');
+      console.log('🔍 AdminDashboard: Loading data with token:', token ? 'Present' : 'Missing');
+      
+      const response = await fetch('http://localhost:3001/api/v1/admin/dashboard', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('🔍 AdminDashboard: Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('🔍 AdminDashboard: API Error:', response.status, errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('🔍 AdminDashboard: Received data:', data);
+      
+      // Transform the data to match our interface
+      const transformedStats: AdminStats = {
+        totalUsers: data.stats.totalUsers,
+        activeUsers: data.stats.activeUsers,
+        totalCompanies: data.stats.totalCompanies,
+        activeCompanies: data.stats.activeCompanies,
+        totalManagers: data.stats.totalManagers,
+        totalAgents: data.stats.totalAgents
+      };
+
+      console.log('🔍 AdminDashboard: Transformed stats:', transformedStats);
+
+      // Transform companies data
+      const transformedCompanies: CompanyWithUsers[] = data.companies.map((company: any) => ({
+        id: company.id,
+        name: company.name,
+        status: company.status,
+        managers: company.managers.map((manager: any) => ({
+          id: manager.id,
+          firstName: manager.first_name,
+          lastName: manager.last_name,
+          email: manager.email,
+          role: 'regular' as UserRole,
+          status: 'active',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })),
+        agents: company.agents.map((agent: any) => ({
+          id: agent.id,
+          firstName: agent.first_name,
+          lastName: agent.last_name,
+          email: agent.email,
+          role: 'regular' as UserRole,
+          status: 'active',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })),
+        totalUsers: company.totalUsers
+      }));
+
+      setStats(transformedStats);
+      setCompanies(transformedCompanies);
+    } catch (error) {
+      console.error('🔍 AdminDashboard: Error loading admin dashboard:', error);
+      setError(error instanceof Error ? error.message : 'Unknown error occurred');
+      // Fallback to mock data if API fails
       const mockStats: AdminStats = {
-        totalUsers: 156,
-        activeUsers: 142,
-        totalCompanies: 23,
-        activeCompanies: 21,
-        totalManagers: 45,
-        totalAgents: 67
+        totalUsers: 8, // Show some data instead of 0
+        activeUsers: 7,
+        totalCompanies: 3,
+        activeCompanies: 2,
+        totalManagers: 1,
+        totalAgents: 1
       };
 
       const mockCompanies: CompanyWithUsers[] = [
         {
           id: '1',
-          name: 'TechCorp Solutions',
+          name: 'Test Company',
           status: 'active',
-          managers: [
-            { id: '1', firstName: 'John', lastName: 'Doe', email: 'john@techcorp.com', role: 'regular', status: 'active', createdAt: new Date(), updatedAt: new Date() },
-            { id: '2', firstName: 'Jane', lastName: 'Smith', email: 'jane@techcorp.com', role: 'regular', status: 'active', createdAt: new Date(), updatedAt: new Date() }
-          ],
-          agents: [
-            { id: '3', firstName: 'Bob', lastName: 'Johnson', email: 'bob@techcorp.com', role: 'regular', status: 'active', createdAt: new Date(), updatedAt: new Date() }
-          ],
-          totalUsers: 3
-        },
-        {
-          id: '2',
-          name: 'Global Industries',
-          status: 'active',
-          managers: [
-            { id: '4', firstName: 'Alice', lastName: 'Brown', email: 'alice@global.com', role: 'regular', status: 'active', createdAt: new Date(), updatedAt: new Date() }
-          ],
-          agents: [
-            { id: '5', firstName: 'Charlie', lastName: 'Wilson', email: 'charlie@global.com', role: 'regular', status: 'active', createdAt: new Date(), updatedAt: new Date() },
-            { id: '6', firstName: 'Diana', lastName: 'Miller', email: 'diana@global.com', role: 'regular', status: 'active', createdAt: new Date(), updatedAt: new Date() }
-          ],
-          totalUsers: 3
+          managers: [],
+          agents: [],
+          totalUsers: 0
         }
       ];
 
       setStats(mockStats);
       setCompanies(mockCompanies);
-    } catch (error) {
-      console.error('Error loading admin dashboard:', error);
     } finally {
       setLoading(false);
     }
@@ -105,6 +151,29 @@ export default function AdminDashboard() {
     setRefreshing(true);
     await loadDashboardData();
     setRefreshing(false);
+  };
+
+  // Test function to call API without authentication
+  const testAPIConnection = async () => {
+    try {
+      console.log('🔍 Testing API connection...');
+      const response = await fetch('http://localhost:3001/api/v1/admin/dashboard', {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('🔍 Test response status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log('🔍 Test error:', errorText);
+      } else {
+        const data = await response.json();
+        console.log('🔍 Test success data:', data);
+      }
+    } catch (error) {
+      console.error('🔍 Test connection error:', error);
+    }
   };
 
   const navigateToUsers = () => router.push('/(tabs)/admin-users');
@@ -125,6 +194,14 @@ export default function AdminDashboard() {
       <View style={styles.header}>
         <Text style={styles.title}>Admin Dashboard</Text>
         <Text style={styles.subtitle}>Welcome back, {user.firstName}</Text>
+        <TouchableOpacity style={styles.testButton} onPress={testAPIConnection}>
+          <Text style={styles.testButtonText}>Test API Connection</Text>
+        </TouchableOpacity>
+        {error && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>Error: {error}</Text>
+          </View>
+        )}
       </View>
 
       {/* Quick Actions */}
@@ -149,43 +226,49 @@ export default function AdminDashboard() {
       <View style={styles.statsContainer}>
         <Text style={styles.sectionTitle}>System Statistics</Text>
         
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <View style={styles.statHeader}>
-              <Users size={20} color="#3B82F6" />
-              <Text style={styles.statLabel}>Total Users</Text>
-            </View>
-            <Text style={styles.statValue}>{stats.totalUsers}</Text>
-            <Text style={styles.statSubtext}>{stats.activeUsers} active</Text>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading statistics...</Text>
           </View>
+        ) : (
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <View style={styles.statHeader}>
+                <Users size={20} color="#3B82F6" />
+                <Text style={styles.statLabel}>Total Users</Text>
+              </View>
+              <Text style={styles.statValue}>{stats.totalUsers}</Text>
+              <Text style={styles.statSubtext}>{stats.activeUsers} active</Text>
+            </View>
 
-          <View style={styles.statCard}>
-            <View style={styles.statHeader}>
-              <Building2 size={20} color="#10B981" />
-              <Text style={styles.statLabel}>Companies</Text>
+            <View style={styles.statCard}>
+              <View style={styles.statHeader}>
+                <Building2 size={20} color="#10B981" />
+                <Text style={styles.statLabel}>Companies</Text>
+              </View>
+              <Text style={styles.statValue}>{stats.totalCompanies}</Text>
+              <Text style={styles.statSubtext}>{stats.activeCompanies} active</Text>
             </View>
-            <Text style={styles.statValue}>{stats.totalCompanies}</Text>
-            <Text style={styles.statSubtext}>{stats.activeCompanies} active</Text>
-          </View>
 
-          <View style={styles.statCard}>
-            <View style={styles.statHeader}>
-              <UserCheck size={20} color="#F59E0B" />
-              <Text style={styles.statLabel}>Managers</Text>
+            <View style={styles.statCard}>
+              <View style={styles.statHeader}>
+                <UserCheck size={20} color="#F59E0B" />
+                <Text style={styles.statLabel}>Managers</Text>
+              </View>
+              <Text style={styles.statValue}>{stats.totalManagers}</Text>
+              <Text style={styles.statSubtext}>Active managers</Text>
             </View>
-            <Text style={styles.statValue}>{stats.totalManagers}</Text>
-            <Text style={styles.statSubtext}>Active managers</Text>
-          </View>
 
-          <View style={styles.statCard}>
-            <View style={styles.statHeader}>
-              <UserX size={20} color="#EF4444" />
-              <Text style={styles.statLabel}>Agents</Text>
+            <View style={styles.statCard}>
+              <View style={styles.statHeader}>
+                <UserX size={20} color="#EF4444" />
+                <Text style={styles.statLabel}>Agents</Text>
+              </View>
+              <Text style={styles.statValue}>{stats.totalAgents}</Text>
+              <Text style={styles.statSubtext}>Active agents</Text>
             </View>
-            <Text style={styles.statValue}>{stats.totalAgents}</Text>
-            <Text style={styles.statSubtext}>Active agents</Text>
           </View>
-        </View>
+        )}
       </View>
 
       {/* Companies Overview */}
@@ -422,5 +505,40 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748B',
     marginBottom: 2,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#64748B',
+  },
+  testButton: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+  },
+  testButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  errorContainer: {
+    backgroundColor: '#FEE2E2',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 10,
+    alignSelf: 'flex-start',
+  },
+  errorText: {
+    color: '#991B1B',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
