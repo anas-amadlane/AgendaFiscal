@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, LoginData, RegisterData, AuthContextType, UserRole } from '@/types/auth';
 import apiProxy from '@/utils/apiProxy';
+import { SessionManager } from '@/utils/sessionManager';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -14,6 +15,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Initialize session security for production
+    SessionManager.initializeSessionTracking();
+    
     // Check for stored auth data on app start
     checkAuthState();
   }, []);
@@ -21,7 +25,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const checkAuthState = async () => {
     try {
       console.log('🔍 Checking auth state...');
-      // Check for stored auth token first
+      
+      // Production security check
+      if (!SessionManager.validateSessionSecurity()) {
+        console.log('🚨 Session security validation failed');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Check for stored auth token
       const storedToken = localStorage.getItem('authToken');
       const isDemoMode = localStorage.getItem('demoMode') === 'true';
       
@@ -63,24 +75,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
           return;
         }
       } else if (isDemoMode && storedToken === 'demo-token') {
-        console.log('🎭 Restoring demo mode...');
-        // Only restore demo mode if explicitly set and token matches
-        const demoUser: User = {
-          id: 'demo-1',
-          email: 'demo@example.com',
-          firstName: 'Demo',
-          lastName: 'User',
-          role: UserRole.ADMIN,
-          status: 'active',
-          createdAt: new Date('2024-01-01'),
-          updatedAt: new Date('2024-01-01'),
-          lastLoginAt: new Date()
-        };
-        
-        setUser(demoUser);
-        setIsLoading(false);
-        console.log('✅ Demo user restored:', demoUser);
-        return;
+        // Production app - clear demo mode data
+        console.log('🧹 Clearing demo mode data...');
+        localStorage.removeItem('demoMode');
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('refreshToken');
       }
       
       // No valid authentication found
@@ -128,6 +127,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.log('Setting user in context:', user);
       setUser(user);
       setIsLoading(false);
+      
+      // Update session activity for successful login
+      SessionManager.updateActivity();
       console.log('User set, loading set to false');
     } catch (error: any) {
       console.error('Login error:', error);
@@ -136,8 +138,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       // Check if it's a network error (backend not available)
       if (error.message.includes('fetch') || error.message.includes('network')) {
-        // Ask user if they want to use demo mode
-        if (window.confirm('Le serveur n\'est pas disponible. Voulez-vous utiliser le mode démo ?')) {
+        // Production app - no demo mode
+        if (false) {
           console.log('User chose demo mode');
           
           const demoUser: User = {
@@ -210,8 +212,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       // Check if it's a network error (backend not available)
       if (error.message.includes('fetch') || error.message.includes('network')) {
-        // Ask user if they want to use demo mode
-        if (window.confirm('Le serveur n\'est pas disponible. Voulez-vous créer un compte en mode démo ?')) {
+        // Production app - no demo mode
+        if (false) {
           console.log('User chose demo mode for registration');
           
           const demoUser: User = {
@@ -257,27 +259,53 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const logout = async () => {
+    console.log('🔄 AuthContext: Starting logout process...');
+    console.log('🔄 AuthContext: Current user:', user);
+    console.log('🔄 AuthContext: isAuthenticated:', !!user);
+    setIsLoading(true);
+    
     try {
-      // Only call logout API if not in demo mode
-      const isDemoMode = localStorage.getItem('demoMode') === 'true';
-      if (!isDemoMode) {
+      // Always attempt backend logout for security in production
+      const hasToken = localStorage.getItem('authToken');
+      if (hasToken && hasToken !== 'demo-token') {
+        console.log('🌐 AuthContext: Calling backend logout...');
         await apiProxy.logout();
+        console.log('✅ AuthContext: Backend logout successful');
       }
     } catch (error: any) {
-      console.error('Logout error:', error);
+      console.error('❌ AuthContext: Logout error:', error);
+      // Continue with logout even if backend call fails
     } finally {
-      // Clear all authentication data
+      console.log('🧹 AuthContext: Clearing all authentication data...');
+      
+      // Comprehensive cleanup for production security
       localStorage.removeItem('authToken');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('demoMode');
+      
+      // Clear any other potential auth-related storage
+      Object.keys(localStorage).forEach(key => {
+        if (key.includes('auth') || key.includes('token') || key.includes('session')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
       apiProxy.clearTokens();
+      
+      // Clear session manager data
+      SessionManager.clearSession();
+      
+      // Clear user state
+      setUser(null);
+      setError(null);
       
       // Add a small delay to ensure state changes are propagated
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      setUser(null);
       setIsLoading(false);
-      setError(null);
+      console.log('✅ AuthContext: Logout completed successfully');
+      console.log('✅ AuthContext: User state after logout:', user);
+      console.log('✅ AuthContext: isAuthenticated after logout:', !!user);
     }
   };
 

@@ -12,6 +12,9 @@ export default function TabsLayout() {
   // Determine which tabs to show based on user role
   const isAdmin = user?.role === UserRole.ADMIN;
   
+  console.log('🔍 TabsLayout - user role:', user?.role);
+  console.log('🔍 TabsLayout - isAdmin:', isAdmin);
+  
   return (
     <AuthGuard requireAuth={true}>
       <Tabs
@@ -40,6 +43,14 @@ export default function TabsLayout() {
           }
         }}
       >
+      {/* Index route for redirects - always hidden */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      
       {/* Admin Dashboard - only for admin users */}
       <Tabs.Screen
         name="admin-dashboard"
@@ -85,14 +96,6 @@ export default function TabsLayout() {
             <Building2 size={size} color={color} />
           ),
           href: isAdmin ? undefined : null,
-        }}
-      />
-      
-      {/* Index route for redirects */}
-      <Tabs.Screen
-        name="index"
-        options={{
-          href: null, // Hide from tab bar
         }}
       />
       

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, router } from 'expo-router';
+import { Link, router, Redirect } from 'expo-router';
 import { Mail, Lock, User, Eye, EyeOff, UserPlus } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { UserRole } from '@/types/auth';
 import emailValidationService from '@/utils/emailValidationService';
 
 export default function RegisterScreen() {
@@ -19,7 +20,21 @@ export default function RegisterScreen() {
   const [validationErrors, setValidationErrors] = useState<{[key: string]: string}>({});
   const [isCheckingEmail, setIsCheckingEmail] = useState(false);
   const [emailExists, setEmailExists] = useState(false);
-  const { register, isLoading, error, clearError } = useAuth();
+  const { register, isLoading, error, clearError, isAuthenticated, user } = useAuth();
+
+  // Redirect already authenticated users to their appropriate dashboard
+  useEffect(() => {
+    if (isAuthenticated && user && !isLoading) {
+      console.log('🔍 Register page: User already authenticated, redirecting...');
+      if (user.role === UserRole.ADMIN) {
+        console.log('🔍 Register page: Redirecting admin to admin-dashboard');
+        router.replace('/(tabs)/admin-dashboard');
+      } else {
+        console.log('🔍 Register page: Redirecting regular user to dashboard');
+        router.replace('/(tabs)/dashboard');
+      }
+    }
+  }, [isAuthenticated, user, isLoading]);
 
   // Validation functions
   const validateField = (field: string, value: string) => {
@@ -193,6 +208,15 @@ export default function RegisterScreen() {
       console.log('Registration error in UI:', error);
     }
   }, [error]);
+
+  // Show redirect for authenticated users
+  if (isAuthenticated && user && !isLoading) {
+    if (user.role === UserRole.ADMIN) {
+      return <Redirect href="/(tabs)/admin-dashboard" />;
+    } else {
+      return <Redirect href="/(tabs)/dashboard" />;
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>

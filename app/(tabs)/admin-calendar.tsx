@@ -4,34 +4,37 @@ import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
 import { Calendar, Plus, Edit, Trash2, Search, Filter, Save, X, Upload, Download } from 'lucide-react-native';
 import * as XLSX from 'xlsx';
+import ModalPicker from '@/components/ModalPicker';
+import apiProxy from '@/utils/apiProxy';
 
 interface FiscalCalendarItem {
   id: string;
-  liste: string;
   categorie_personnes: string;
   sous_categorie?: string;
-  mois?: string;
-  type_impot: string;
-  date_echeance: string;
+  type: string;
+  tag: string;
+  frequence_declaration: string;
   periode_declaration?: string;
-  type_declaration?: string;
+  mois?: string;
+  jours?: string;
+  detail_declaration?: string;
   formulaire?: string;
   lien?: string;
   commentaire?: string;
-  is_tva_assujetti: boolean;
   created_at: Date;
   updated_at: Date;
 }
 
 interface ExcelImportData {
-  liste: string;
   categorie_personnes: string;
   sous_categorie?: string;
-  mois?: string;
-  type_impot: string;
-  date_echeance: string;
+  type: string;
+  tag: string;
+  frequence_declaration: string;
   periode_declaration?: string;
-  type_declaration?: string;
+  mois?: string;
+  jours?: string;
+  detail_declaration?: string;
   formulaire?: string;
   lien?: string;
   commentaire?: string;
@@ -54,48 +57,93 @@ export default function AdminCalendar() {
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  
+  // Dropdown states
+  const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
 
   // Categories and options
-  const [categories] = useState<Category[]>([
-    {
-      id: '1',
-      name: 'Entreprises',
-      subCategories: ['SARL', 'SA', 'SNC', 'EI', 'Auto-entrepreneur']
-    },
-    {
-      id: '2',
-      name: 'Professions Libérales',
-      subCategories: ['Médecin', 'Avocat', 'Architecte', 'Expert-comptable']
-    },
-    {
-      id: '3',
-      name: 'Commerçants',
-      subCategories: ['Détail', 'Gros', 'Import/Export']
-    }
+  const [categories] = useState([
+    'Personne Morale',
+    'Personne Physique'
   ]);
 
-  const [tvaOptions] = useState([
-    'Assujetti TVA',
-    'Non assujetti TVA',
-    'Exonéré TVA',
-    'TVA sur encaissements'
+  const [types] = useState([
+    'Taxe sur la Valeur Ajoutée',
+    'Impôt sur le revenu',
+    'Impôt sur le revenu / Impôt sur les Sociétés',
+    'Taxe spéciale annuelle sur les véhicules',
+    'Droits de Timbre',
+    'Taxe Professionnelle',
+    'Impôt sur les sociétés',
+    'Contribution Sociale de Solidarité',
+    'Caisse Nationale de Sécurité Sociale',
+    'Délais de Paiement'
   ]);
+
+  const [tags] = useState([
+    'TVA',
+    'IR',
+    'IR / IS',
+    'TSAV',
+    'DT',
+    'TP',
+    'IS',
+    'CSS',
+    'CNSS',
+    'DP'
+  ]);
+
+  const [frequences] = useState([
+    'Mensuel',
+    'Trimestriel',
+    'Annuel'
+  ]);
+
+  const [periodes] = useState([
+    'Décembre',
+    '4e Trimestre',
+    'L\'Année Précédente',
+    'Janvier',
+    'Février',
+    '1e Trimestre',
+    'Mars',
+    'Avril',
+    'Mai',
+    '2e Trimestre',
+    '2e Acompte N-1',
+    'Juin',
+    'Juillet',
+    'Août',
+    '3e Trimestre',
+    '3e Acompte N-1',
+    'Septembre',
+    'Octobre',
+    'Novembre',
+    '4e Acompte N-1',
+    '1e Acompte N-1'
+  ]);
+
+  const [mois] = useState([
+    'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+  ]);
+
+  const [jours] = useState(Array.from({length: 31}, (_, i) => (i + 1).toString()));
 
   // Form state
   const [formData, setFormData] = useState({
-    liste: '',
     categorie_personnes: '',
     sous_categorie: '',
-    mois: '',
-    type_impot: '',
-    date_echeance: '',
+    type: '',
+    tag: '',
+    frequence_declaration: '',
     periode_declaration: '',
-    type_declaration: '',
+    mois: '',
+    jours: '',
+    detail_declaration: '',
     formulaire: '',
     lien: '',
-    commentaire: '',
-    is_tva_assujetti: false,
-    tva_option: ''
+    commentaire: ''
   });
 
   // Check if user is admin
@@ -107,65 +155,48 @@ export default function AdminCalendar() {
     loadCalendarData();
   }, [user]);
 
-  // Filter items based on search query
-  useEffect(() => {
-    const filtered = calendarItems.filter(item => 
-      item.liste.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.categorie_personnes.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.type_impot.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredItems(filtered);
-  }, [searchQuery, calendarItems]);
+     // Filter items based on search query
+   useEffect(() => {
+     const filtered = calendarItems.filter(item => 
+       (item.categorie_personnes?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+       (item.type?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+       (item.tag?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+       (item.periode_declaration?.toLowerCase() || '').includes(searchQuery.toLowerCase())
+     );
+     setFilteredItems(filtered);
+   }, [searchQuery, calendarItems]);
 
   const loadCalendarData = async () => {
     try {
       setLoading(true);
       
-      // Get auth token
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
-             const response = await fetch('http://localhost:3001/api/v1/fiscal/calendar', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
+      const result = await apiProxy.getAdminCalendar();
       
       if (result.success) {
         // Convert database format to frontend format
         const items: FiscalCalendarItem[] = result.data.map((item: any) => ({
-          id: item.id,
-          liste: item.liste,
-          categorie_personnes: item.categorie_personnes,
-          sous_categorie: item.sous_categorie,
-          mois: item.mois,
-          type_impot: item.type_impot,
-          date_echeance: item.date_echeance,
-          periode_declaration: item.periode_declaration,
-          type_declaration: item.type_declaration,
-          formulaire: item.formulaire,
-          lien: item.lien,
-          commentaire: item.commentaire,
-          is_tva_assujetti: item.is_tva_assujetti,
-          created_at: new Date(item.created_at),
-          updated_at: new Date(item.updated_at)
+          id: item.id || '',
+          categorie_personnes: item.categorie_personnes || '',
+          sous_categorie: item.sous_categorie || '',
+          type: item.type || '',
+          tag: item.tag || '',
+          frequence_declaration: item.frequence_declaration || '',
+          periode_declaration: item.periode_declaration || '',
+          mois: item.mois || '',
+          jours: item.jours || '',
+          detail_declaration: item.detail_declaration || '',
+          formulaire: item.formulaire || '',
+          lien: item.lien || '',
+          commentaire: item.commentaire || '',
+          created_at: new Date(item.created_at || Date.now()),
+          updated_at: new Date(item.updated_at || Date.now())
         }));
 
         setCalendarItems(items);
       } else {
         throw new Error(result.error || 'Failed to load calendar data');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error loading calendar data:', error);
       Alert.alert('Error', 'Failed to load calendar data');
     } finally {
@@ -180,36 +211,34 @@ export default function AdminCalendar() {
     if (type === 'edit' && item) {
       setSelectedItem(item);
       setFormData({
-        liste: item.liste,
         categorie_personnes: item.categorie_personnes,
         sous_categorie: item.sous_categorie || '',
-        mois: item.mois || '',
-        type_impot: item.type_impot,
-        date_echeance: item.date_echeance,
+        type: item.type || '',
+        tag: item.tag || '',
+        frequence_declaration: item.frequence_declaration || '',
         periode_declaration: item.periode_declaration || '',
-        type_declaration: item.type_declaration || '',
+        mois: item.mois || '',
+        jours: item.jours || '',
+        detail_declaration: item.detail_declaration || '',
         formulaire: item.formulaire || '',
         lien: item.lien || '',
-        commentaire: item.commentaire || '',
-        is_tva_assujetti: item.is_tva_assujetti,
-        tva_option: ''
+        commentaire: item.commentaire || ''
       });
     } else {
       setSelectedItem(null);
       setFormData({
-        liste: '',
         categorie_personnes: '',
         sous_categorie: '',
-        mois: '',
-        type_impot: '',
-        date_echeance: '',
+        type: '',
+        tag: '',
+        frequence_declaration: '',
         periode_declaration: '',
-        type_declaration: '',
+        mois: '',
+        jours: '',
+        detail_declaration: '',
         formulaire: '',
         lien: '',
-        commentaire: '',
-        is_tva_assujetti: false,
-        tva_option: ''
+        commentaire: ''
       });
     }
   };
@@ -220,37 +249,19 @@ export default function AdminCalendar() {
   };
 
   const handleSave = async () => {
-    if (!formData.liste || !formData.categorie_personnes || !formData.type_impot || !formData.date_echeance) {
+    if (!formData.categorie_personnes || !formData.type || !formData.tag || !formData.frequence_declaration) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
          try {
-       // Get auth token
-       const token = localStorage.getItem('authToken');
-       if (!token) {
-         throw new Error('No authentication token found');
+       let result;
+       
+       if (modalType === 'edit') {
+         result = await apiProxy.updateAdminCalendarEntry(selectedItem?.id, formData);
+       } else {
+         result = await apiProxy.createAdminCalendarEntry(formData);
        }
-
-       const url = modalType === 'edit' 
-         ? `http://localhost:3001/api/v1/fiscal/admin/calendar/${selectedItem?.id}`
-         : 'http://localhost:3001/api/v1/fiscal/admin/calendar';
-
-       const response = await fetch(url, {
-         method: modalType === 'edit' ? 'PUT' : 'POST',
-         headers: {
-           'Authorization': `Bearer ${token}`,
-           'Content-Type': 'application/json'
-         },
-         body: JSON.stringify(formData)
-       });
-
-       if (!response.ok) {
-         const errorData = await response.json();
-         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-       }
-
-       const result = await response.json();
        
        if (result.success) {
          // Reload the calendar data to get the updated list
@@ -270,7 +281,7 @@ export default function AdminCalendar() {
   const handleDelete = async (item: FiscalCalendarItem) => {
     Alert.alert(
       'Confirm Delete',
-      `Are you sure you want to delete "${item.liste}"?`,
+      `Are you sure you want to delete "${item.type}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -278,26 +289,7 @@ export default function AdminCalendar() {
           style: 'destructive',
                      onPress: async () => {
              try {
-               // Get auth token
-               const token = localStorage.getItem('authToken');
-               if (!token) {
-                 throw new Error('No authentication token found');
-               }
-
-               const response = await fetch(`http://localhost:3001/api/v1/fiscal/admin/calendar/${item.id}`, {
-                 method: 'DELETE',
-                 headers: {
-                   'Authorization': `Bearer ${token}`,
-                   'Content-Type': 'application/json'
-                 }
-               });
-
-               if (!response.ok) {
-                 const errorData = await response.json();
-                 throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-               }
-
-               const result = await response.json();
+               const result = await apiProxy.deleteAdminCalendarEntry(item.id);
                
                if (result.success) {
                  // Reload the calendar data to get the updated list
@@ -324,6 +316,7 @@ export default function AdminCalendar() {
   const processExcelData = (data: any[]): ExcelImportData[] => {
     console.log('Processing Excel data, input length:', data.length);
     console.log('Sample input row:', data[0]);
+    console.log('Available columns:', Object.keys(data[0] || {}));
     
     const processed = data.map((row, index) => {
       // Convert Excel date number to string if needed
@@ -350,15 +343,36 @@ export default function AdminCalendar() {
         }
       }
       
+      // Get the raw values first
+      const rawCategorie = row['Catégorie de Personnes'] || row['categorie_personnes'] || row['Catégorie'] || '';
+      const rawType = row['Type'] || row['type'] || '';
+      const rawTag = row['Tag'] || row['tag'] || '';
+      const rawFrequence = row['Fréquence de déclaration'] || row['frequence_declaration'] || row['Fréquence'] || row['frequence'] || '';
+      
+      // Provide default values for missing required fields
+      let frequence_declaration = String(rawFrequence);
+      if (!frequence_declaration || frequence_declaration.trim() === '') {
+        // Try to infer frequency from type or provide default
+        if (rawType.includes('TVA')) {
+          frequence_declaration = 'Mensuel';
+        } else if (rawType.includes('IR') || rawType.includes('Impôt')) {
+          frequence_declaration = 'Trimestriel';
+        } else {
+          frequence_declaration = 'Annuel'; // Default fallback
+        }
+        console.log(`Row ${index}: Inferred frequency "${frequence_declaration}" for type "${rawType}"`);
+      }
+      
       const processedRow = {
-        liste: String(row['Liste'] || row['liste'] || (index + 1)),
-        categorie_personnes: String(row['Catégorie de Personnes'] || row['categorie_personnes'] || ''),
+        categorie_personnes: String(rawCategorie),
         sous_categorie: String(row['Sous-Catégorie'] || row['sous_categorie'] || ''),
-        mois: String(row['Mois'] || row['mois'] || ''),
-        type_impot: String(row['Type d\'Impôt'] || row['type_impot'] || ''),
-        date_echeance: String(dateEcheance),
+        type: String(rawType),
+        tag: String(rawTag),
+        frequence_declaration: frequence_declaration,
         periode_declaration: String(row['Période déclaration'] || row['periode_declaration'] || ''),
-        type_declaration: String(row['Type de déclaration'] || row['type_declaration'] || ''),
+        mois: String(row['Mois'] || row['mois'] || ''),
+        jours: String(row['Jours'] || row['jours'] || ''),
+        detail_declaration: String(row['Detail déclaration'] || row['detail_declaration'] || ''),
         formulaire: String(row['Formulaire'] || row['formulaire'] || ''),
         lien: String(row['Lien'] || row['lien'] || ''),
         commentaire: String(row['Commentaire'] || row['commentaire'] || '')
@@ -384,62 +398,58 @@ export default function AdminCalendar() {
       const processedData = processExcelData(fileData);
       console.log('Processed data:', processedData.length, 'items');
       
-                    // Validate required fields
-        const validData = processedData.filter(item => {
-          const isValid = item.liste && item.categorie_personnes && item.type_impot && item.date_echeance;
-          if (!isValid) {
-            console.log('Invalid item:', {
-              liste: item.liste,
-              categorie_personnes: item.categorie_personnes,
-              type_impot: item.type_impot,
-              date_echeance: item.date_echeance,
-              hasListe: !!item.liste,
-              hasCategorie: !!item.categorie_personnes,
-              hasTypeImpot: !!item.type_impot,
-              hasDateEcheance: !!item.date_echeance
-            });
-          }
-          return isValid;
-        });
+                             // Validate required fields with better error reporting
+         const validData = processedData.filter(item => {
+           const missingFields = [];
+           
+           if (!item.categorie_personnes || item.categorie_personnes.trim() === '') {
+             missingFields.push('Catégorie de Personnes');
+           }
+           if (!item.type || item.type.trim() === '') {
+             missingFields.push('Type');
+           }
+           if (!item.tag || item.tag.trim() === '') {
+             missingFields.push('Tag');
+           }
+           if (!item.frequence_declaration || item.frequence_declaration.trim() === '') {
+             missingFields.push('Fréquence de déclaration');
+           }
+           
+           const isValid = missingFields.length === 0;
+           if (!isValid) {
+             console.log('Invalid item:', {
+               categorie_personnes: item.categorie_personnes,
+               type: item.type,
+               tag: item.tag,
+               frequence_declaration: item.frequence_declaration,
+               missingFields: missingFields
+             });
+           }
+           return isValid;
+         });
         console.log('Valid data:', validData.length, 'items');
 
       if (validData.length === 0) {
-        Alert.alert('Error', 'No valid data found in the Excel file. Please check the format.');
+        const totalItems = processedData.length;
+        const invalidItems = processedData.length - validData.length;
+        Alert.alert(
+          'Import Failed', 
+          `No valid data found in the Excel file.\n\nTotal items: ${totalItems}\nValid items: ${validData.length}\nInvalid items: ${invalidItems}\n\nPlease check that your Excel file has the required columns: Catégorie de Personnes, Type, Tag, and Fréquence de déclaration.`
+        );
         return;
       }
 
-      // Convert to FiscalCalendarItem format
-      const newItems: FiscalCalendarItem[] = validData.map((item, index) => ({
-        id: Date.now().toString() + index,
-        ...item,
-        is_tva_assujetti: item.type_impot.toLowerCase().includes('tva'),
-        created_at: new Date(),
-        updated_at: new Date()
-      }));
+             // Convert to FiscalCalendarItem format
+       const newItems: FiscalCalendarItem[] = validData.map((item, index) => ({
+         id: Date.now().toString() + index,
+         ...item,
+         created_at: new Date(),
+         updated_at: new Date()
+       }));
       console.log('New items created:', newItems.length);
 
-             // Get auth token
-       const token = localStorage.getItem('authToken');
-       if (!token) {
-         throw new Error('No authentication token found');
-       }
-
-       // Call the real API
-       const response = await fetch('http://localhost:3001/api/v1/fiscal/admin/calendar/import', {
-         method: 'POST',
-         headers: {
-           'Authorization': `Bearer ${token}`,
-           'Content-Type': 'application/json'
-         },
-         body: JSON.stringify({ items: newItems })
-       });
-
-       if (!response.ok) {
-         const errorData = await response.json();
-         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-       }
-
-       const result = await response.json();
+             // Call the real API
+       const result = await apiProxy.importAdminCalendar({ items: newItems });
        
        if (result.success) {
          console.log('Import result:', result.data);
@@ -447,9 +457,13 @@ export default function AdminCalendar() {
          // Reload the calendar data to get the updated list
          await loadCalendarData();
          
-                  Alert.alert(
+                  const totalItems = processedData.length;
+         const invalidItems = totalItems - validData.length;
+         const importedItems = result.data.imported;
+         
+         Alert.alert(
            'Import Successful', 
-           result.message || `Successfully imported ${result.data.imported} calendar items.`
+           `Import completed successfully!\n\nTotal items processed: ${totalItems}\nValid items: ${validData.length}\nInvalid items: ${invalidItems}\nSuccessfully imported: ${importedItems}\n\n${result.message || ''}`
          );
        } else {
          throw new Error(result.error || 'Import failed');
@@ -538,9 +552,10 @@ export default function AdminCalendar() {
           console.log('Calling importExcelData with', processedData.length, 'items');
           await importExcelData(processedData);
           
-        } catch (error) {
+        } catch (error: unknown) {
           console.error('Error processing Excel file:', error);
-          Alert.alert('Error', `Failed to process Excel file: ${error.message}`);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          Alert.alert('Error', `Failed to process Excel file: ${errorMessage}`);
         } finally {
           setImporting(false);
         }
@@ -558,35 +573,37 @@ export default function AdminCalendar() {
 
   const downloadTemplate = async () => {
     try {
-      // Create template data based on the structure you showed
-      const templateData = [
-        {
-          'Liste': '1',
-          'Catégorie de Personnes': 'Personne Morale',
-          'Sous-Catégorie': '',
-          'Mois': 'Janvier',
-          'Type d\'Impôt': 'Taxe sur la Valeur Ajoutée',
-          'Date d\'échéance': '31-janv.',
-          'Période déclaration': 'Décembre',
-          'Type de déclaration': 'TVA Déclaration du Chiffre d\'Affaires',
-          'Formulaire': 'ADC080B-25I',
-          'Lien': 'https://www.tax.gov.ma/wps/wcm/connect/2aabc75b-959e-4753-a152-3441104acaf7/adc_080b_25i.pdf?MOD=AJPERES',
-          'Commentaire': 'Télédéclaration mensuelle et télépaiement de la TVA pour le mois précédent doivent être effectués avant l\'expiration du mois suivant pour les redevables assujettis selon le régime de la déclaration mensuelle (Articles 110, 111, 112 et 115 du CGI imprimés ADC080B-25I, ADC082B-24I, ADC081B-24I).'
-        },
-        {
-          'Liste': '14',
-          'Catégorie de Personnes': 'Personne Physique',
-          'Sous-Catégorie': 'Auto-entrepreneur',
-          'Mois': 'Janvier',
-          'Type d\'Impôt': 'Impôt sur le revenu (IR)',
-          'Date d\'échéance': '31-janv.',
-          'Période déclaration': '4ème Trimestre',
-          'Type de déclaration': 'Versement IR sur Chiffre d\'Affaires',
-          'Formulaire': '',
-          'Lien': '',
-          'Commentaire': 'Versement de l\'impôt dû titre du trimestre précédent prévu par l\'article 82 bis du CGI par les personnes physiques exerçant leurs activités à titre individuel dans le cadre de l\'auto-entrepreneur au taux de : - 0,5% du chiffre d\'affaires encaissé et dont le montant ne dépasse pas 500 000 DH pour les activités commerciales, industrielles et artisanales ; - 1% du chiffre d\'affaires encaissé et dont le montant ne dépasse pas 200 000 DH pour les prestataires de services'
-        }
-      ];
+             // Create template data based on the new structure
+       const templateData = [
+         {
+           'Catégorie de Personnes': 'Personne Morale',
+           'Sous-Catégorie': 'SARL',
+           'Type': 'Taxe sur la Valeur Ajoutée',
+           'Tag': 'TVA',
+           'Fréquence de déclaration': 'Mensuel',
+           'Période déclaration': 'Décembre',
+           'Mois': 'Janvier',
+           'Jours': '20',
+           'Detail déclaration': 'TVA Déclaration du Chiffre d\'Affaires',
+           'Formulaire': 'ADC080B-25I',
+           'Lien': 'https://www.tax.gov.ma/wps/wcm/connect/2aabc75b-959e-4753-a152-3441104acaf7/adc_080b_25i.pdf?MOD=AJPERES',
+           'Commentaire': 'Télédéclaration mensuelle et télépaiement de la TVA pour le mois précédent doivent être effectués avant l\'expiration du mois suivant pour les redevables assujettis selon le régime de la déclaration mensuelle (Articles 110, 111, 112 et 115 du CGI imprimés ADC080B-25I, ADC082B-24I, ADC081B-24I).'
+         },
+         {
+           'Catégorie de Personnes': 'Personne Physique',
+           'Sous-Catégorie': 'Auto-entrepreneur',
+           'Type': 'Impôt sur le revenu',
+           'Tag': 'IR',
+           'Fréquence de déclaration': 'Trimestriel',
+           'Période déclaration': '4e Trimestre',
+           'Mois': 'Janvier',
+           'Jours': '31',
+           'Detail déclaration': 'Versement IR sur Chiffre d\'Affaires',
+           'Formulaire': '',
+           'Lien': '',
+           'Commentaire': 'Versement de l\'impôt dû titre du trimestre précédent prévu par l\'article 82 bis du CGI par les personnes physiques exerçant leurs activités à titre individuel dans le cadre de l\'auto-entrepreneur au taux de : - 0,5% du chiffre d\'affaires encaissé et dont le montant ne dépasse pas 500 000 DH pour les activités commerciales, industrielles et artisanales ; - 1% du chiffre d\'affaires encaissé et dont le montant ne dépasse pas 200 000 DH pour les prestataires de services'
+         }
+       ];
 
       // Create workbook and worksheet
       const workbook = XLSX.utils.book_new();
@@ -617,8 +634,10 @@ export default function AdminCalendar() {
   };
 
   const getSelectedCategory = () => {
-    return categories.find(cat => cat.name === formData.categorie_personnes);
+    return categories.includes(formData.categorie_personnes);
   };
+
+
 
   if (user?.role !== 'admin') {
     return null;
@@ -665,65 +684,88 @@ export default function AdminCalendar() {
         </TouchableOpacity>
       </View>
 
-      {/* Calendar Items List */}
-      <ScrollView style={styles.itemsList}>
-        {filteredItems.map((item) => (
-          <View key={item.id} style={styles.itemCard}>
-            <View style={styles.itemHeader}>
-              <Text style={styles.itemTitle}>{item.liste}</Text>
-              <View style={styles.itemActions}>
-                <TouchableOpacity 
-                  style={styles.actionButton}
-                  onPress={() => openModal('edit', item)}
-                >
-                  <Edit size={16} color="#3B82F6" />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.actionButton, styles.deleteButton]}
-                  onPress={() => handleDelete(item)}
-                >
-                  <Trash2 size={16} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            </View>
+             {/* Calendar Items List */}
+       <ScrollView style={styles.itemsList}>
+         {filteredItems.map((item) => {
+           // Get current year
+           const currentYear = new Date().getFullYear();
+           
+           // Create title: TYPE - periode declaration
+           const title = item.periode_declaration 
+             ? `${item.type} - ${item.periode_declaration}`
+             : item.type;
+           
+           // Create date: jours/mois/current year
+           const date = item.jours && item.mois 
+             ? `${item.jours}/${item.mois}/${currentYear}`
+             : '';
+           
+           return (
+             <View key={item.id} style={styles.itemCard}>
+               <View style={styles.itemHeader}>
+                 <Text style={styles.itemTitle}>{title}</Text>
+                 <View style={styles.itemActions}>
+                   <TouchableOpacity 
+                     style={styles.actionButton}
+                     onPress={() => openModal('edit', item)}
+                   >
+                     <Edit size={16} color="#3B82F6" />
+                   </TouchableOpacity>
+                   <TouchableOpacity 
+                     style={[styles.actionButton, styles.deleteButton]}
+                     onPress={() => handleDelete(item)}
+                   >
+                     <Trash2 size={16} color="#EF4444" />
+                   </TouchableOpacity>
+                 </View>
+               </View>
 
-            <View style={styles.itemDetails}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Category:</Text>
-                <Text style={styles.detailValue}>{item.categorie_personnes}</Text>
-              </View>
-              {item.sous_categorie && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Sub-category:</Text>
-                  <Text style={styles.detailValue}>{item.sous_categorie}</Text>
-                </View>
-              )}
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Tax Type:</Text>
-                <Text style={styles.detailValue}>{item.type_impot}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Due Date:</Text>
-                <Text style={styles.detailValue}>{item.date_echeance}</Text>
-              </View>
-              {item.is_tva_assujetti && (
-                <View style={styles.tvaBadge}>
-                  <Text style={styles.tvaText}>TVA Subject</Text>
-                </View>
-              )}
-            </View>
-          </View>
-        ))}
-      </ScrollView>
+               <View style={styles.itemDetails}>
+                 <View style={styles.detailRow}>
+                   <Text style={styles.detailLabel}>Category:</Text>
+                   <Text style={styles.detailValue}>{item.categorie_personnes}</Text>
+                 </View>
+                 {item.sous_categorie && (
+                   <View style={styles.detailRow}>
+                     <Text style={styles.detailLabel}>Sub-category:</Text>
+                     <Text style={styles.detailValue}>{item.sous_categorie}</Text>
+                   </View>
+                 )}
+                 <View style={styles.detailRow}>
+                   <Text style={styles.detailLabel}>Tag:</Text>
+                   <Text style={styles.detailValue}>{item.tag}</Text>
+                 </View>
+                 <View style={styles.detailRow}>
+                   <Text style={styles.detailLabel}>Frequency:</Text>
+                   <Text style={styles.detailValue}>{item.frequence_declaration}</Text>
+                 </View>
+                 {date && (
+                   <View style={styles.detailRow}>
+                     <Text style={styles.detailLabel}>Due Date:</Text>
+                     <Text style={styles.detailValue}>{date}</Text>
+                   </View>
+                 )}
+               </View>
+             </View>
+           );
+         })}
+       </ScrollView>
 
-      {/* Create/Edit Modal */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent={true}
-      >
-        <View style={styles.modalOverlay}>
-          <ScrollView style={styles.modalContent}>
+             {/* Create/Edit Modal */}
+               <Modal
+          visible={modalVisible}
+          animationType="slide"
+          transparent={true}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setDropdownOpen(null)}
+          >
+            <ScrollView 
+              style={styles.modalContent}
+              onStartShouldSetResponder={() => true}
+            >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {modalType === 'create' ? 'Create Calendar Item' : 'Edit Calendar Item'}
@@ -733,162 +775,134 @@ export default function AdminCalendar() {
               </TouchableOpacity>
             </View>
 
-            {/* Required Fields */}
-            <Text style={styles.sectionTitle}>Required Information</Text>
-            
-            <TextInput
-              style={styles.input}
-              placeholder="Liste *"
-              value={formData.liste}
-              onChangeText={(text) => setFormData({...formData, liste: text})}
+                         {/* Required Fields */}
+             <Text style={styles.sectionTitle}>Required Information</Text>
+             
+                                       <ModalPicker
+              label="Catégorie de Personnes *"
+              value={formData.categorie_personnes}
+              options={categories}
+              onSelect={(value) => setFormData({...formData, categorie_personnes: value, sous_categorie: ''})}
+              placeholder="Select Category"
+              fieldName="categorie_personnes"
+              isOpen={dropdownOpen === 'categorie_personnes'}
+              onToggle={() => setDropdownOpen(dropdownOpen === 'categorie_personnes' ? null : 'categorie_personnes')}
+              onClose={() => setDropdownOpen(null)}
             />
 
-            <View style={styles.pickerContainer}>
-              <Text style={styles.label}>Category *</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryPicker}>
-                {categories.map((category) => (
-                  <TouchableOpacity
-                    key={category.id}
-                    style={[
-                      styles.categoryOption,
-                      formData.categorie_personnes === category.name && styles.categoryOptionSelected
-                    ]}
-                    onPress={() => setFormData({...formData, categorie_personnes: category.name, sous_categorie: ''})}
-                  >
-                    <Text style={[
-                      styles.categoryOptionText,
-                      formData.categorie_personnes === category.name && styles.categoryOptionTextSelected
-                    ]}>
-                      {category.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
+             <TextInput
+               style={styles.input}
+               placeholder="Sous-Catégorie"
+               value={formData.sous_categorie}
+               onChangeText={(text) => setFormData({...formData, sous_categorie: text})}
+             />
 
-            {getSelectedCategory() && (
-              <View style={styles.pickerContainer}>
-                <Text style={styles.label}>Sub-category</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryPicker}>
-                  {getSelectedCategory()!.subCategories.map((subCat) => (
-                    <TouchableOpacity
-                      key={subCat}
-                      style={[
-                        styles.categoryOption,
-                        formData.sous_categorie === subCat && styles.categoryOptionSelected
-                      ]}
-                      onPress={() => setFormData({...formData, sous_categorie: subCat})}
-                    >
-                      <Text style={[
-                        styles.categoryOptionText,
-                        formData.sous_categorie === subCat && styles.categoryOptionTextSelected
-                      ]}>
-                        {subCat}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            <TextInput
-              style={styles.input}
-              placeholder="Type d'impôt *"
-              value={formData.type_impot}
-              onChangeText={(text) => setFormData({...formData, type_impot: text})}
+                                       <ModalPicker
+              label="Type *"
+              value={formData.type}
+              options={types}
+              onSelect={(value) => setFormData({...formData, type: value})}
+              placeholder="Select Type"
+              fieldName="type"
+              isOpen={dropdownOpen === 'type'}
+              onToggle={() => setDropdownOpen(dropdownOpen === 'type' ? null : 'type')}
+              onClose={() => setDropdownOpen(null)}
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Date d'échéance * (YYYY-MM-DD)"
-              value={formData.date_echeance}
-              onChangeText={(text) => setFormData({...formData, date_echeance: text})}
+             <ModalPicker
+              label="Tag *"
+              value={formData.tag}
+              options={tags}
+              onSelect={(value) => setFormData({...formData, tag: value})}
+              placeholder="Select Tag"
+              fieldName="tag"
+              isOpen={dropdownOpen === 'tag'}
+              onToggle={() => setDropdownOpen(dropdownOpen === 'tag' ? null : 'tag')}
+              onClose={() => setDropdownOpen(null)}
             />
 
-            {/* Optional Fields */}
-            <Text style={styles.sectionTitle}>Additional Information</Text>
-
-            <TextInput
-              style={styles.input}
-              placeholder="Mois"
-              value={formData.mois}
-              onChangeText={(text) => setFormData({...formData, mois: text})}
+             <ModalPicker
+              label="Fréquence de déclaration *"
+              value={formData.frequence_declaration}
+              options={frequences}
+              onSelect={(value) => setFormData({...formData, frequence_declaration: value})}
+              placeholder="Select Frequency"
+              fieldName="frequence_declaration"
+              isOpen={dropdownOpen === 'frequence_declaration'}
+              onToggle={() => setDropdownOpen(dropdownOpen === 'frequence_declaration' ? null : 'frequence_declaration')}
+              onClose={() => setDropdownOpen(null)}
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Période de déclaration"
+             {/* Optional Fields */}
+             <Text style={styles.sectionTitle}>Additional Information</Text>
+
+             <ModalPicker
+              label="Période déclaration"
               value={formData.periode_declaration}
-              onChangeText={(text) => setFormData({...formData, periode_declaration: text})}
+              options={periodes}
+              onSelect={(value) => setFormData({...formData, periode_declaration: value})}
+              placeholder="Select Period"
+              fieldName="periode_declaration"
+              isOpen={dropdownOpen === 'periode_declaration'}
+              onToggle={() => setDropdownOpen(dropdownOpen === 'periode_declaration' ? null : 'periode_declaration')}
+              onClose={() => setDropdownOpen(null)}
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Type de déclaration"
-              value={formData.type_declaration}
-              onChangeText={(text) => setFormData({...formData, type_declaration: text})}
+             <ModalPicker
+              label="Mois"
+              value={formData.mois}
+              options={mois}
+              onSelect={(value) => setFormData({...formData, mois: value})}
+              placeholder="Select Month"
+              fieldName="mois"
+              isOpen={dropdownOpen === 'mois'}
+              onToggle={() => setDropdownOpen(dropdownOpen === 'mois' ? null : 'mois')}
+              onClose={() => setDropdownOpen(null)}
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Formulaire"
-              value={formData.formulaire}
-              onChangeText={(text) => setFormData({...formData, formulaire: text})}
+             <ModalPicker
+              label="Jours"
+              value={formData.jours}
+              options={jours}
+              onSelect={(value) => setFormData({...formData, jours: value})}
+              placeholder="Select Day"
+              fieldName="jours"
+              isOpen={dropdownOpen === 'jours'}
+              onToggle={() => setDropdownOpen(dropdownOpen === 'jours' ? null : 'jours')}
+              onClose={() => setDropdownOpen(null)}
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Lien"
-              value={formData.lien}
-              onChangeText={(text) => setFormData({...formData, lien: text})}
-            />
+             <TextInput
+               style={[styles.input, styles.textArea]}
+               placeholder="Detail déclaration"
+               value={formData.detail_declaration}
+               onChangeText={(text) => setFormData({...formData, detail_declaration: text})}
+               multiline
+               numberOfLines={3}
+             />
 
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Commentaire"
-              value={formData.commentaire}
-              onChangeText={(text) => setFormData({...formData, commentaire: text})}
-              multiline
-              numberOfLines={3}
-            />
+             <TextInput
+               style={styles.input}
+               placeholder="Formulaire"
+               value={formData.formulaire}
+               onChangeText={(text) => setFormData({...formData, formulaire: text})}
+             />
 
-            {/* TVA Section */}
-            <Text style={styles.sectionTitle}>TVA Configuration</Text>
+             <TextInput
+               style={styles.input}
+               placeholder="Lien"
+               value={formData.lien}
+               onChangeText={(text) => setFormData({...formData, lien: text})}
+             />
 
-            <View style={styles.switchContainer}>
-              <Text style={styles.switchLabel}>Subject to TVA</Text>
-              <Switch
-                value={formData.is_tva_assujetti}
-                onValueChange={(value) => setFormData({...formData, is_tva_assujetti: value})}
-                trackColor={{ false: '#E2E8F0', true: '#3B82F6' }}
-                thumbColor={formData.is_tva_assujetti ? '#FFFFFF' : '#FFFFFF'}
-              />
-            </View>
-
-            {formData.is_tva_assujetti && (
-              <View style={styles.pickerContainer}>
-                <Text style={styles.label}>TVA Option</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryPicker}>
-                  {tvaOptions.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[
-                        styles.categoryOption,
-                        formData.tva_option === option && styles.categoryOptionSelected
-                      ]}
-                      onPress={() => setFormData({...formData, tva_option: option})}
-                    >
-                      <Text style={[
-                        styles.categoryOptionText,
-                        formData.tva_option === option && styles.categoryOptionTextSelected
-                      ]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
+             <TextInput
+               style={[styles.input, styles.textArea]}
+               placeholder="Commentaire"
+               value={formData.commentaire}
+               onChangeText={(text) => setFormData({...formData, commentaire: text})}
+               multiline
+               numberOfLines={3}
+             />
 
             {/* Modal Actions */}
             <View style={styles.modalActions}>
@@ -901,7 +915,7 @@ export default function AdminCalendar() {
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Import Excel Modal */}
@@ -923,56 +937,60 @@ export default function AdminCalendar() {
               Import fiscal calendar data from an Excel file. The file should contain the following columns:
             </Text>
 
-            <ScrollView style={styles.importColumnsList}>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text style={styles.requiredField}>Liste</Text>
-                <Text> (Required)</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text style={styles.requiredField}>Catégorie de Personnes</Text>
-                <Text> (Required)</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text>Sous-Catégorie</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text>Mois</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text style={styles.requiredField}>Type d'Impôt</Text>
-                <Text> (Required)</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text style={styles.requiredField}>Date d'échéance</Text>
-                <Text> (Required)</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text>Période déclaration</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text>Type de déclaration</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text>Formulaire</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text>Lien</Text>
-              </Text>
-              <Text style={styles.importColumn}>
-                <Text>• </Text>
-                <Text>Commentaire</Text>
-              </Text>
-            </ScrollView>
+                         <ScrollView style={styles.importColumnsList}>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text style={styles.requiredField}>Catégorie de Personnes</Text>
+                 <Text> (Required)</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text>Sous-Catégorie</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text style={styles.requiredField}>Type</Text>
+                 <Text> (Required)</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text style={styles.requiredField}>Tag</Text>
+                 <Text> (Required)</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text style={styles.requiredField}>Fréquence de déclaration</Text>
+                 <Text> (Required)</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text>Période déclaration</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text>Mois</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text>Jours</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text>Detail déclaration</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text>Formulaire</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text>Lien</Text>
+               </Text>
+               <Text style={styles.importColumn}>
+                 <Text>• </Text>
+                 <Text>Commentaire</Text>
+               </Text>
+             </ScrollView>
 
             <View style={styles.importActions}>
               <TouchableOpacity 
@@ -1001,34 +1019,52 @@ export default function AdminCalendar() {
               onPress={() => {
                  console.log('Test Import button clicked!');
                  Alert.alert('Test', 'Test Import button clicked!');
+                 
+                 // Test data with missing frequence_declaration to test the inference logic
                  const testData = [
-                   {
-                     'Liste': '1',
-                     'Catégorie de Personnes': 'Personne Morale',
-                     'Sous-Catégorie': '',
-                     'Mois': 'Janvier',
-                     'Type d\'Impôt': 'Taxe sur la Valeur Ajoutée',
-                     'Date d\'échéance': '31-janv.',
-                     'Période déclaration': 'Décembre',
-                     'Type de déclaration': 'TVA Déclaration du Chiffre d\'Affaires',
-                     'Formulaire': 'ADC080B-25I',
-                     'Lien': 'https://www.tax.gov.ma/wps/wcm/connect/2aabc75b-959e-4753-a152-3441104acaf7/adc_080b_25i.pdf?MOD=AJPERES',
-                     'Commentaire': 'Télédéclaration mensuelle et télépaiement de la TVA pour le mois précédent doivent être effectués avant l\'expiration du mois suivant pour les redevables assujettis selon le régime de la déclaration mensuelle (Articles 110, 111, 112 et 115 du CGI imprimés ADC080B-25I, ADC082B-24I, ADC081B-24I).'
-                   },
-                   {
-                     'Liste': '14',
-                     'Catégorie de Personnes': 'Personne Physique',
-                     'Sous-Catégorie': 'Auto-entrepreneur',
-                     'Mois': 'Janvier',
-                     'Type d\'Impôt': 'Impôt sur le revenu (IR)',
-                     'Date d\'échéance': '31-janv.',
-                     'Période déclaration': '4ème Trimestre',
-                     'Type de déclaration': 'Versement IR sur Chiffre d\'Affaires',
-                     'Formulaire': '',
-                     'Lien': '',
-                     'Commentaire': 'Versement de l\'impôt dû titre du trimestre précédent prévu par l\'article 82 bis du CGI par les personnes physiques exerçant leurs activités à titre individuel dans le cadre de l\'auto-entrepreneur au taux de : - 0,5% du chiffre d\'affaires encaissé et dont le montant ne dépasse pas 500 000 DH pour les activités commerciales, industrielles et artisanales ; - 1% du chiffre d\'affaires encaissé et dont le montant ne dépasse pas 200 000 DH pour les prestataires de services'
-                   }
-                 ];
+                    {
+                      'Catégorie de Personnes': 'Personne Morale',
+                      'Sous-Catégorie': 'SARL',
+                      'Type': 'Taxe sur la Valeur Ajoutée',
+                      'Tag': 'TVA',
+                      'Fréquence de déclaration': '', // Missing to test inference
+                      'Période déclaration': 'Décembre',
+                      'Mois': 'Janvier',
+                      'Jours': '20',
+                      'Detail déclaration': 'TVA Déclaration du Chiffre d\'Affaires',
+                      'Formulaire': 'ADC080B-25I',
+                      'Lien': 'https://www.tax.gov.ma/wps/wcm/connect/2aabc75b-959e-4753-a152-3441104acaf7/adc_080b_25i.pdf?MOD=AJPERES',
+                      'Commentaire': 'Télédéclaration mensuelle et télépaiement de la TVA pour le mois précédent doivent être effectués avant l\'expiration du mois suivant pour les redevables assujettis selon le régime de la déclaration mensuelle (Articles 110, 111, 112 et 115 du CGI imprimés ADC080B-25I, ADC082B-24I, ADC081B-24I).'
+                    },
+                    {
+                      'Catégorie de Personnes': 'Personne Physique',
+                      'Sous-Catégorie': 'Auto-entrepreneur',
+                      'Type': 'Impôt sur le revenu',
+                      'Tag': 'IR',
+                      'Fréquence de déclaration': '', // Missing to test inference
+                      'Période déclaration': '4e Trimestre',
+                      'Mois': 'Janvier',
+                      'Jours': '31',
+                      'Detail déclaration': 'Versement IR sur Chiffre d\'Affaires',
+                      'Formulaire': '',
+                      'Lien': '',
+                      'Commentaire': 'Versement de l\'impôt dû titre du trimestre précédent prévu par l\'article 82 bis du CGI par les personnes physiques exerçant leurs activités à titre individuel dans le cadre de l\'auto-entrepreneur au taux de : - 0,5% du chiffre d\'affaires encaissé et dont le montant ne dépasse pas 500 000 DH pour les activités commerciales, industrielles et artisanales ; - 1% du chiffre d\'affaires encaissé et dont le montant ne dépasse pas 200 000 DH pour les prestataires de services'
+                    },
+                    {
+                      'Catégorie de Personnes': 'Personne Morale',
+                      'Sous-Catégorie': 'SA',
+                      'Type': 'Impôt sur les sociétés',
+                      'Tag': 'IS',
+                      'Fréquence de déclaration': '', // Missing to test inference
+                      'Période déclaration': 'Annuel',
+                      'Mois': 'Mars',
+                      'Jours': '31',
+                      'Detail déclaration': 'Déclaration annuelle IS',
+                      'Formulaire': 'IS205',
+                      'Lien': '',
+                      'Commentaire': 'Déclaration annuelle de l\'impôt sur les sociétés'
+                    }
+                  ];
                  console.log('Test data:', testData);
                  importExcelData(testData);
                }}
@@ -1207,6 +1243,8 @@ const styles = StyleSheet.create({
   },
   pickerContainer: {
     marginBottom: 16,
+    position: 'relative',
+    zIndex: 10,
   },
   label: {
     fontSize: 14,
@@ -1238,6 +1276,7 @@ const styles = StyleSheet.create({
   categoryOptionTextSelected: {
     color: '#FFFFFF',
   },
+
   switchContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1287,11 +1326,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  actionButton: {
-    padding: 8,
-    borderRadius: 6,
-    backgroundColor: '#F1F5F9',
   },
   importDescription: {
     fontSize: 14,

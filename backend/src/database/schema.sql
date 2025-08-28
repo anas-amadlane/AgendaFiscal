@@ -24,14 +24,12 @@ CREATE TABLE users (
 CREATE TABLE companies (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
-    registration_number VARCHAR(100) UNIQUE,
-    tax_id VARCHAR(100),
-    address TEXT,
-    phone VARCHAR(50),
-    email VARCHAR(255),
-    website VARCHAR(255),
-    industry VARCHAR(100),
-    size VARCHAR(50),
+    -- Fiscal and legal information fields
+    categorie_personnes VARCHAR(100), -- 'Personne Physique' or 'Personne Morale'
+    sous_categorie VARCHAR(100), -- Legal form (SARL, SA, SAS, etc.)
+    is_tva_assujetti BOOLEAN DEFAULT false, -- Subject to VAT
+    regime_tva VARCHAR(50), -- 'Mensuel' or 'Trimestriel'
+    prorata_deduction BOOLEAN DEFAULT false, -- Subject to prorata deduction
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -39,20 +37,21 @@ CREATE TABLE companies (
 );
 
 -- Fiscal Calendar table for default calendar data
+-- Schema based on comprehensive fiscal declaration requirements
 CREATE TABLE fiscal_calendar (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    liste VARCHAR(100) NOT NULL,
-    categorie_personnes VARCHAR(100) NOT NULL,
-    sous_categorie VARCHAR(100),
-    mois VARCHAR(50),
-    type_impot VARCHAR(100) NOT NULL,
-    date_echeance DATE NOT NULL,
-    periode_declaration VARCHAR(100),
-    type_declaration VARCHAR(100),
-    formulaire VARCHAR(100),
-    lien VARCHAR(500),
-    commentaire TEXT,
-    is_tva_assujetti BOOLEAN DEFAULT false,
+    id SERIAL PRIMARY KEY, -- Simple sequential numbering for unique identification
+    categorie_personnes VARCHAR(100) NOT NULL, -- Type of taxpayer (Entreprise, Particulier, Auto-entrepreneur, Association...)
+    sous_categorie VARCHAR(100), -- Sub-category precision (Société IS, Salarié, Profession libérale, Micro-entreprise...)
+    type VARCHAR(50) NOT NULL, -- Nature of declaration: Fiscal, Social, or other (para-fiscal, réglementaire, etc.)
+    tag VARCHAR(50) NOT NULL, -- Code or keyword representing the declaration (IS, IR, TVA, CNSS, CPU, TP...)
+    frequence_declaration VARCHAR(50) NOT NULL, -- Declaration frequency: Mensuel, Trimestriel, Annuel
+    periode_declaration VARCHAR(200), -- Periods concerned by the declaration (T1-T2-T3-T4, or specific months)
+    mois VARCHAR(10), -- Month when declaration or payment is due (03 for March, 06 for June...)
+    jours INTEGER, -- Day limit of the month for declaration or payment (20, 31...)
+    detail_declaration TEXT, -- Description of content or object of declaration (TVA collectée, IR sur salaires, acompte IS...)
+    formulaire VARCHAR(100), -- Form reference or service name used (IS205, TVA-CAD, DAMANCOM, etc.)
+    lien VARCHAR(500), -- Link to online declaration portal or tool (www.tax.gov.ma, DAMANCOM...)
+    commentaire TEXT, -- Additional information, clarifications, specific conditions, thresholds, reminders or practical remarks
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -151,7 +150,7 @@ CREATE TABLE user_sessions (
     refresh_token VARCHAR(255) UNIQUE,
     ip_address INET,
     user_agent TEXT,
-    expires_at TIMESTAMP NOT NULL,
+    expire TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -189,9 +188,12 @@ CREATE INDEX idx_companies_name ON companies(name);
 CREATE INDEX idx_companies_created_by ON companies(created_by);
 CREATE INDEX idx_fiscal_calendar_categorie ON fiscal_calendar(categorie_personnes);
 CREATE INDEX idx_fiscal_calendar_sous_categorie ON fiscal_calendar(sous_categorie);
-CREATE INDEX idx_fiscal_calendar_type_impot ON fiscal_calendar(type_impot);
-CREATE INDEX idx_fiscal_calendar_date_echeance ON fiscal_calendar(date_echeance);
-CREATE INDEX idx_fiscal_calendar_is_tva_assujetti ON fiscal_calendar(is_tva_assujetti);
+CREATE INDEX idx_fiscal_calendar_type ON fiscal_calendar(type);
+CREATE INDEX idx_fiscal_calendar_tag ON fiscal_calendar(tag);
+CREATE INDEX idx_fiscal_calendar_frequence ON fiscal_calendar(frequence_declaration);
+CREATE INDEX idx_fiscal_calendar_mois ON fiscal_calendar(mois);
+CREATE INDEX idx_fiscal_calendar_jours ON fiscal_calendar(jours);
+CREATE INDEX idx_fiscal_calendar_formulaire ON fiscal_calendar(formulaire);
 CREATE INDEX idx_company_user_roles_company_id ON company_user_roles(company_id);
 CREATE INDEX idx_company_user_roles_user_id ON company_user_roles(user_id);
 CREATE INDEX idx_company_user_roles_role ON company_user_roles(role);
@@ -211,6 +213,7 @@ CREATE INDEX idx_fiscal_obligations_assigned_to ON fiscal_obligations(assigned_t
 CREATE INDEX idx_dashboard_configurations_user_id ON dashboard_configurations(user_id);
 CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX idx_user_sessions_token ON user_sessions(session_token);
+CREATE INDEX idx_user_sessions_expire ON user_sessions(expire);
 CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
 CREATE INDEX idx_notifications_user_id ON notifications(user_id);
@@ -235,6 +238,6 @@ CREATE TRIGGER update_manager_agent_assignments_updated_at BEFORE UPDATE ON mana
 CREATE TRIGGER update_agent_company_assignments_updated_at BEFORE UPDATE ON agent_company_assignments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_fiscal_obligations_updated_at BEFORE UPDATE ON fiscal_obligations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_dashboard_configurations_updated_at BEFORE UPDATE ON dashboard_configurations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_user_sessions_updated_at BEFORE UPDATE ON user_sessions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER update_audit_logs_updated_at BEFORE UPDATE ON audit_logs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_notifications_updated_at BEFORE UPDATE ON notifications FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 

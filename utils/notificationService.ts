@@ -1,136 +1,134 @@
-import { FiscalObligation } from '@/types/fiscal';
+import { FiscalCalendarEntry, getFiscalCalendarEntryStatus } from '@/types/fiscal';
 
+// Notification settings interface for user preferences
 export interface NotificationSettings {
-  enabled: boolean;
-  alertDays: number[]; // J-15, J-7, J-3, J-1
-  soundEnabled: boolean;
-  vibrationEnabled: boolean;
-  emailNotifications: boolean;
   pushNotifications: boolean;
+  emailNotifications: boolean;
+  soundEnabled: boolean;
+  reminderDays: number;
 }
 
-export interface NotificationData {
+// Default notification settings
+export const defaultNotificationSettings: NotificationSettings = {
+  pushNotifications: true,
+  emailNotifications: true,
+  soundEnabled: true,
+  reminderDays: 7
+};
+
+export interface Notification {
   id: string;
-  obligationId: string;
-  enterpriseId: string;
+  fiscalEntryId: number;
   title: string;
   message: string;
-  dueDate: Date;
-  daysRemaining: number;
+  type: 'overdue' | 'due' | 'reminder';
   isRead: boolean;
   createdAt: Date;
-  type: 'reminder' | 'overdue' | 'urgent';
 }
 
-export const defaultNotificationSettings: NotificationSettings = {
-  enabled: true,
-  alertDays: [15, 7, 3, 1],
-  soundEnabled: true,
-  vibrationEnabled: true,
-  emailNotifications: false,
-  pushNotifications: true,
-};
+// Generate notifications for fiscal calendar entries
+export const generateFiscalCalendarNotifications = (entries: FiscalCalendarEntry[]): Notification[] => {
+  const notifications: Notification[] = [];
+  const now = new Date();
 
-export const calculateNotificationDate = (dueDate: Date, daysBefore: number): Date => {
-  const notificationDate = new Date(dueDate);
-  notificationDate.setDate(notificationDate.getDate() - daysBefore);
-  return notificationDate;
-};
-
-export const shouldSendNotification = (
-  obligation: FiscalObligation,
-  settings: NotificationSettings,
-  currentDate: Date = new Date()
-): boolean => {
-  if (!settings.enabled) return false;
-
-  const daysRemaining = Math.ceil((obligation.dueDate.getTime() - currentDate.getTime()) / (1000 * 3600 * 24));
-  
-  // Vérifier si on doit envoyer une notification aujourd'hui
-  return settings.alertDays.includes(daysRemaining);
-};
-
-export const generateNotificationMessage = (
-  obligation: FiscalObligation,
-  enterpriseName: string,
-  daysRemaining: number
-): { title: string; message: string } => {
-  let title = '';
-  let message = '';
-
-  if (daysRemaining < 0) {
-    title = 'Obligation en retard';
-    message = `L'obligation "${obligation.title}" pour ${enterpriseName} est en retard de ${Math.abs(daysRemaining)} jour(s).`;
-  } else if (daysRemaining === 0) {
-    title = 'Échéance aujourd\'hui';
-    message = `L'obligation "${obligation.title}" pour ${enterpriseName} est due aujourd'hui.`;
-  } else if (daysRemaining === 1) {
-    title = 'Échéance demain';
-    message = `L'obligation "${obligation.title}" pour ${enterpriseName} est due demain.`;
-  } else {
-    title = 'Rappel d\'échéance';
-    message = `L'obligation "${obligation.title}" pour ${enterpriseName} est due dans ${daysRemaining} jour(s).`;
-  }
-
-  return { title, message };
-};
-
-export const scheduleNotification = async (
-  obligation: FiscalObligation,
-  enterpriseName: string,
-  settings: NotificationSettings
-): Promise<void> => {
-  // Dans une vraie application, vous utiliseriez expo-notifications
-  // pour programmer les notifications locales
-  
-  const currentDate = new Date();
-  const daysRemaining = Math.ceil((obligation.dueDate.getTime() - currentDate.getTime()) / (1000 * 3600 * 24));
-
-  if (shouldSendNotification(obligation, settings, currentDate)) {
-    const { title, message } = generateNotificationMessage(obligation, enterpriseName, daysRemaining);
+  entries.forEach(entry => {
+    const status = getFiscalCalendarEntryStatus(entry, now);
     
-    // Simuler l'envoi de notification
-    console.log('Notification programmée:', { title, message, obligationId: obligation.id });
-    
-    // Ici vous programmeriez la notification avec expo-notifications
-    // await Notifications.scheduleNotificationAsync({
-    //   content: { title, body: message },
-    //   trigger: { date: new Date() }, // ou trigger spécifique
-    // });
-  }
-};
-
-export const sendImmediateNotification = async (
-  obligation: FiscalObligation,
-  enterpriseName: string,
-  settings: NotificationSettings
-): Promise<void> => {
-  const daysRemaining = Math.ceil((obligation.dueDate.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-  const { title, message } = generateNotificationMessage(obligation, enterpriseName, daysRemaining);
-
-  // Simuler l'envoi immédiat de notification
-  console.log('Notification immédiate:', { title, message, obligationId: obligation.id });
-  
-  // Ici vous enverriez la notification immédiatement
-  // await Notifications.scheduleNotificationAsync({
-  //   content: { title, body: message },
-  //   trigger: null, // notification immédiate
-  // });
-};
-
-export const checkAndSendNotifications = async (
-  obligations: FiscalObligation[],
-  enterpriseNames: Record<string, string>,
-  settings: NotificationSettings
-): Promise<void> => {
-  const currentDate = new Date();
-  
-  for (const obligation of obligations) {
-    const enterpriseName = enterpriseNames[obligation.enterpriseId] || 'Entreprise inconnue';
-    
-    if (shouldSendNotification(obligation, settings, currentDate)) {
-      await sendImmediateNotification(obligation, enterpriseName, settings);
+    if (status === 'overdue') {
+      notifications.push({
+        id: `overdue-${entry.id}`,
+        fiscalEntryId: entry.id,
+        title: 'Déclaration en retard',
+        message: `${entry.detail_declaration} - ${entry.categorie_personnes} (${entry.tag})`,
+        type: 'overdue',
+        isRead: false,
+        createdAt: now
+      });
+    } else if (status === 'due') {
+      notifications.push({
+        id: `due-${entry.id}`,
+        fiscalEntryId: entry.id,
+        title: 'Échéance proche',
+        message: `${entry.detail_declaration} - ${entry.categorie_personnes} (${entry.tag})`,
+        type: 'due',
+        isRead: false,
+        createdAt: now
+      });
     }
-  }
+  });
+
+  return notifications;
+};
+
+// Get unread notifications count
+export const getUnreadNotificationsCount = (notifications: Notification[]): number => {
+  return notifications.filter(notification => !notification.isRead).length;
+};
+
+// Mark notification as read
+export const markNotificationAsRead = (notifications: Notification[], notificationId: string): Notification[] => {
+  return notifications.map(notification => 
+    notification.id === notificationId 
+      ? { ...notification, isRead: true }
+      : notification
+  );
+};
+
+// Mark all notifications as read
+export const markAllNotificationsAsRead = (notifications: Notification[]): Notification[] => {
+  return notifications.map(notification => ({ ...notification, isRead: true }));
+};
+
+// Filter notifications by type
+export const filterNotificationsByType = (notifications: Notification[], type: 'overdue' | 'due' | 'reminder'): Notification[] => {
+  return notifications.filter(notification => notification.type === type);
+};
+
+// Get overdue notifications
+export const getOverdueNotifications = (notifications: Notification[]): Notification[] => {
+  return filterNotificationsByType(notifications, 'overdue');
+};
+
+// Get due notifications
+export const getDueNotifications = (notifications: Notification[]): Notification[] => {
+  return filterNotificationsByType(notifications, 'due');
+};
+
+// Get reminder notifications
+export const getReminderNotifications = (notifications: Notification[]): Notification[] => {
+  return filterNotificationsByType(notifications, 'reminder');
+};
+
+// Sort notifications by priority and date
+export const sortNotificationsByPriority = (notifications: Notification[]): Notification[] => {
+  return notifications.sort((a, b) => {
+    // Priority order: overdue > due > reminder
+    const priorityOrder = { overdue: 3, due: 2, reminder: 1 };
+    const priorityDiff = priorityOrder[b.type] - priorityOrder[a.type];
+    
+    if (priorityDiff !== 0) {
+      return priorityDiff;
+    }
+    
+    // If same priority, sort by creation date (newest first)
+    return b.createdAt.getTime() - a.createdAt.getTime();
+  });
+};
+
+// Get notifications summary
+export const getNotificationsSummary = (notifications: Notification[]) => {
+  const total = notifications.length;
+  const unread = getUnreadNotificationsCount(notifications);
+  const overdue = getOverdueNotifications(notifications).length;
+  const due = getDueNotifications(notifications).length;
+  const reminders = getReminderNotifications(notifications).length;
+
+  return {
+    total,
+    unread,
+    overdue,
+    due,
+    reminders
+  };
 };
 

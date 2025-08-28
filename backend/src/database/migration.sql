@@ -29,9 +29,34 @@ ALTER TABLE manager_agent_assignments ADD CONSTRAINT manager_agent_assignments_c
 -- 6. Create index for company_id in manager_agent_assignments
 CREATE INDEX IF NOT EXISTS idx_manager_agent_company_id ON manager_agent_assignments(company_id);
 
--- 7. Update any existing references to old roles
+-- 7. Fix user_sessions table for connect-pg-simple compatibility
+-- Backup existing sessions data
+CREATE TABLE user_sessions_backup AS SELECT * FROM user_sessions;
+
+-- Drop existing table and recreate with correct column name
+DROP TABLE IF EXISTS user_sessions CASCADE;
+
+-- Recreate user_sessions table with 'expire' column
+CREATE TABLE user_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_token VARCHAR(255) UNIQUE NOT NULL,
+    refresh_token VARCHAR(255) UNIQUE,
+    ip_address INET,
+    user_agent TEXT,
+    expire TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for user_sessions
+CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX idx_user_sessions_token ON user_sessions(session_token);
+CREATE INDEX idx_user_sessions_expire ON user_sessions(expire);
+
+-- 8. Update any existing references to old roles
 -- This will depend on your specific data and requirements
 
--- 8. Clean up (optional - uncomment when you're sure everything works)
+-- 9. Clean up (optional - uncomment when you're sure everything works)
 -- DROP TABLE users_backup;
 -- DROP TABLE manager_agent_assignments_backup;
+-- DROP TABLE user_sessions_backup;

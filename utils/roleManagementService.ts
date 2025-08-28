@@ -1,41 +1,49 @@
-import { UserRole, CompanyWithRole } from '@/types/auth';
-import { apiProxy } from './apiProxy';
+import { UserRole, CompanyRole, CompanyWithRole } from '@/types/auth';
+import apiProxy from './apiProxy';
 
 export class RoleManagementService {
-  // Check if we're in demo mode
+  // Check if we're in demo mode - disabled for production
   private static isDemoMode(): boolean {
-    return process.env.NODE_ENV === 'development' || process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
+    return false; // Always require real authentication in production
   }
 
   static canViewAllCompanies(userRole: UserRole): boolean {
-    return userRole === UserRole.MANAGER;
+    return userRole === UserRole.ADMIN;
   }
 
   static canAssignUsers(userRole: UserRole): boolean {
-    return userRole === UserRole.MANAGER;
+    return userRole === UserRole.ADMIN;
   }
 
-  static getRoleDisplayName(role: UserRole): string {
+  static getRoleDisplayName(role: UserRole | CompanyRole): string {
     switch (role) {
-      case UserRole.MANAGER:
-        return 'Manager';
-      case UserRole.AGENT:
-        return 'Agent';
+      case UserRole.ADMIN:
+        return 'Admin';
       case UserRole.REGULAR:
         return 'Utilisateur';
+      case CompanyRole.MANAGER:
+        return 'Manager';
+      case CompanyRole.AGENT:
+        return 'Agent';
+      case CompanyRole.OWNER:
+        return 'Propriétaire';
       default:
         return 'Inconnu';
     }
   }
 
-  static getRoleColor(role: UserRole): string {
+  static getRoleColor(role: UserRole | CompanyRole): string {
     switch (role) {
-      case UserRole.MANAGER:
-        return '#1E40AF'; // Blue
-      case UserRole.AGENT:
-        return '#059669'; // Green
+      case UserRole.ADMIN:
+        return '#DC2626'; // Red
       case UserRole.REGULAR:
         return '#6B7280'; // Gray
+      case CompanyRole.MANAGER:
+        return '#1E40AF'; // Blue
+      case CompanyRole.AGENT:
+        return '#059669'; // Green
+      case CompanyRole.OWNER:
+        return '#7C3AED'; // Purple
       default:
         return '#6B7280';
     }
@@ -48,12 +56,20 @@ export class RoleManagementService {
     }
 
     try {
-      const response = await apiProxy.get('/api/v1/users/companies');
-      return response.data.map((company: any) => ({
+      const response = await apiProxy.get('/companies');
+      console.log('🔍 RoleManagementService: API Response:', response);
+      console.log('🔍 RoleManagementService: Response structure:', {
+        hasData: 'data' in response,
+        hasCompanies: 'companies' in response,
+        keys: Object.keys(response)
+      });
+      
+      // Handle both possible response structures
+      const companies = response.companies || response.data || [];
+      return companies.map((company: any) => ({
         id: company.id,
         name: company.name,
-        registrationNumber: company.registration_number,
-        taxId: company.tax_id,
+
         status: company.status,
         userRole: company.user_role,
         userStatus: company.user_status,
@@ -73,7 +89,7 @@ export class RoleManagementService {
     }
 
     try {
-      const response = await apiProxy.get(`/api/v1/users/manager/${managerId}/agents`);
+      const response = await apiProxy.get(`/users/manager/${managerId}/agents`);
       return response.data;
     } catch (error) {
       console.error('Error fetching manager agents:', error);
@@ -84,11 +100,13 @@ export class RoleManagementService {
   // Create company with role assignment
   static async createCompanyWithRole(companyData: {
     name: string;
-    registrationNumber: string;
-    taxId?: string;
-    industry?: string;
+    categoriePersonnes?: string;
+    sousCategorie?: string;
     userRole: UserRole;
     managerEmail?: string;
+    isTvaAssujetti?: boolean;
+    regimeTva?: string;
+    prorataDdeduction?: boolean;
   }): Promise<void> {
     if (this.isDemoMode()) {
       console.log('Demo mode: Creating company with role', companyData);
@@ -96,9 +114,35 @@ export class RoleManagementService {
     }
 
     try {
-      await apiProxy.post('/api/v1/companies', companyData);
+      // Transform the data to match backend expectations
+      console.log('🔍 RoleManagementService: Input userRole:', companyData.userRole);
+      console.log('🔍 RoleManagementService: CompanyRole.MANAGER:', CompanyRole.MANAGER);
+      console.log('🔍 RoleManagementService: Comparison result:', companyData.userRole === CompanyRole.MANAGER);
+      
+      const transformedData = {
+        name: companyData.name,
+        userRole: companyData.userRole === CompanyRole.MANAGER ? 'manager' : 'agent',
+        managerEmail: companyData.managerEmail || '',
+        categoriePersonnes: companyData.categoriePersonnes || null,
+        sousCategorie: companyData.sousCategorie || null,
+        isTvaAssujetti: companyData.isTvaAssujetti || false,
+        regimeTva: companyData.regimeTva || null,
+        prorataDdeduction: companyData.prorataDdeduction || false
+      };
+
+      console.log('🔍 RoleManagementService: Sending data to backend:', JSON.stringify(transformedData, null, 2));
+      await apiProxy.createCompanyWithRole(transformedData);
     } catch (error) {
       console.error('Error creating company with role:', error);
+      
+      // Log detailed error information
+      if (error.details) {
+        console.error('Validation errors:', error.details);
+      }
+      if (error.message) {
+        console.error('Error message:', error.message);
+      }
+      
       throw error;
     }
   }
@@ -111,7 +155,7 @@ export class RoleManagementService {
     }
 
     try {
-      await apiProxy.post('/api/v1/users/assign-agent', {
+      await apiProxy.post('/users/assign-agent', {
         managerId,
         agentId
       });
@@ -129,7 +173,7 @@ export class RoleManagementService {
     }
 
     try {
-      await apiProxy.post('/api/v1/users/assign-companies', {
+      await apiProxy.post('/users/assign-companies', {
         agentId,
         companyIds
       });
@@ -146,12 +190,11 @@ export class RoleManagementService {
     }
 
     try {
-      const response = await apiProxy.get(`/api/v1/users/agent/${agentId}/companies`);
+      const response = await apiProxy.get(`/users/agent/${agentId}/companies`);
       return response.data.map((company: any) => ({
         id: company.id,
         name: company.name,
-        registrationNumber: company.registration_number,
-        taxId: company.tax_id,
+
         status: company.status,
         userRole: company.user_role,
         userStatus: company.user_status,
@@ -170,8 +213,7 @@ export class RoleManagementService {
       {
         id: '1',
         name: 'SARL Tech Solutions',
-        registrationNumber: '12345678',
-        taxId: '12345678',
+
         status: 'active',
         userRole: UserRole.MANAGER,
         userStatus: 'active',
@@ -181,8 +223,7 @@ export class RoleManagementService {
       {
         id: '2',
         name: 'EURL Commerce Plus',
-        registrationNumber: '87654321',
-        taxId: '87654321',
+
         status: 'active',
         userRole: UserRole.AGENT,
         userStatus: 'active',
@@ -192,8 +233,7 @@ export class RoleManagementService {
       {
         id: '3',
         name: 'SNC Services Pro',
-        registrationNumber: '11223344',
-        taxId: '11223344',
+
         status: 'active',
         userRole: UserRole.AGENT,
         userStatus: 'active',
@@ -226,3 +266,5 @@ export class RoleManagementService {
     ];
   }
 }
+
+export default RoleManagementService;

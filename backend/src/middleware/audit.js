@@ -3,7 +3,7 @@
  * Logs user actions for security and compliance purposes
  */
 
-const { create } = require('../config/database');
+const { query } = require('../config/database');
 
 /**
  * Creates an audit log entry for the specified action
@@ -61,7 +61,7 @@ const createAuditLog = async (req, action, table, responseData) => {
     const oldValues = req.method === 'PUT' || req.method === 'DELETE' ? requestBody : null;
     const newValues = req.method === 'POST' || req.method === 'PUT' ? requestBody : null;
 
-    await create(
+    await query(
       `INSERT INTO audit_logs (
         user_id, action, table_name, record_id, old_values, new_values, 
         ip_address, user_agent, created_at

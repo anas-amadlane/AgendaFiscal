@@ -23,6 +23,9 @@ const invitationRoutes = require('./routes/invitations');
 const fiscalRoutes = require('./routes/fiscal');
 const adminRoutes = require('./routes/admin');
 
+// Import automated services
+const automatedObligationService = require('./services/automatedObligationService');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -188,6 +191,7 @@ app.use((error, req, res, next) => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
+  automatedObligationService.stop();
   server.close(() => {
     console.log('Process terminated');
     process.exit(0);
@@ -196,6 +200,7 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully');
+  automatedObligationService.stop();
   server.close(() => {
     console.log('Process terminated');
     process.exit(0);
@@ -203,11 +208,18 @@ process.on('SIGINT', () => {
 });
 
 // Start server
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 API Base URL: http://localhost:${PORT}${apiPrefix}`);
   console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
+  
+  // Initialize automated services
+  try {
+    await automatedObligationService.initialize();
+  } catch (error) {
+    console.error('❌ Failed to initialize automated services:', error);
+  }
 });
 
 module.exports = app; 

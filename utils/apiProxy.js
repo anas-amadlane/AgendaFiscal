@@ -59,6 +59,31 @@ class ApiProxy {
     }
   }
 
+  // Generic HTTP methods
+  async get(endpoint, params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const url = queryString ? `${endpoint}?${queryString}` : endpoint;
+    return this.request(url, { method: 'GET' });
+  }
+
+  async post(endpoint, data = {}) {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async put(endpoint, data = {}) {
+    return this.request(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async delete(endpoint) {
+    return this.request(endpoint, { method: 'DELETE' });
+  }
+
   // Token refresh handling
   async handleTokenRefresh(originalEndpoint, originalOptions) {
     if (this.isRefreshing) {
@@ -136,10 +161,16 @@ class ApiProxy {
 
   async logout() {
     try {
+      console.log('🌐 Making logout request to backend...');
       await this.request('/auth/logout', {
         method: 'POST',
       });
+      console.log('✅ Backend logout successful');
+    } catch (error) {
+      console.error('❌ Backend logout failed:', error);
+      // Don't throw error, just log it
     } finally {
+      console.log('🧹 Clearing tokens from API proxy...');
       this.clearTokens();
     }
   }
@@ -249,33 +280,110 @@ class ApiProxy {
     });
   }
 
-  // Fiscal obligations endpoints (to be implemented)
+  // Fiscal obligations endpoints
   async getFiscalObligations(params = {}) {
     const queryString = new URLSearchParams(params).toString();
-    return this.request(`/fiscal-obligations?${queryString}`);
+    return this.request(`/obligations?${queryString}`);
   }
 
   async getFiscalObligation(obligationId) {
-    return this.request(`/fiscal-obligations/${obligationId}`);
+    return this.request(`/obligations/${obligationId}`);
   }
 
   async createFiscalObligation(obligationData) {
-    return this.request('/fiscal-obligations', {
+    return this.request('/obligations', {
       method: 'POST',
       body: JSON.stringify(obligationData),
     });
   }
 
   async updateFiscalObligation(obligationId, obligationData) {
-    return this.request(`/fiscal-obligations/${obligationId}`, {
+    return this.request(`/obligations/${obligationId}`, {
       method: 'PUT',
       body: JSON.stringify(obligationData),
     });
   }
 
   async deleteFiscalObligation(obligationId) {
-    return this.request(`/fiscal-obligations/${obligationId}`, {
+    return this.request(`/obligations/${obligationId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async generateFiscalObligations(companyId) {
+    return this.request('/obligations/generate', {
+      method: 'POST',
+      body: JSON.stringify({ company_id: companyId }),
+    });
+  }
+
+  async generateFiscalObligationsForAllCompanies(managerEmail, year = 2025) {
+    return this.request('/obligations/generate/all-companies', {
+      method: 'POST',
+      body: JSON.stringify({ managerEmail, year }),
+    });
+  }
+
+  async generateFiscalObligationsForAllCompaniesDynamic(managerEmail) {
+    return this.request('/obligations/generate/all-companies-dynamic', {
+      method: 'POST',
+      body: JSON.stringify({ managerEmail }),
+    });
+  }
+
+  async triggerManualObligationGeneration(managerEmail) {
+    return this.request('/obligations/generate/manual', {
+      method: 'POST',
+      body: JSON.stringify({ managerEmail }),
+    });
+  }
+
+  async getFiscalObligationStats() {
+    return this.request('/obligations/stats/overview');
+  }
+
+  // Admin endpoints
+  async getAdminStats() {
+    return this.request('/admin/stats');
+  }
+
+  async getAdminDashboard() {
+    return this.request('/admin/dashboard');
+  }
+
+  async getAdminCompaniesOverview() {
+    return this.request('/admin/companies/overview');
+  }
+
+  // Admin fiscal calendar endpoints
+  async getAdminCalendar() {
+    return this.request('/admin/calendar');
+  }
+
+  async createAdminCalendarEntry(entryData) {
+    return this.request('/admin/calendar', {
+      method: 'POST',
+      body: JSON.stringify(entryData),
+    });
+  }
+
+  async updateAdminCalendarEntry(entryId, entryData) {
+    return this.request(`/admin/calendar/${entryId}`, {
+      method: 'PUT',
+      body: JSON.stringify(entryData),
+    });
+  }
+
+  async deleteAdminCalendarEntry(entryId) {
+    return this.request(`/admin/calendar/${entryId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async importAdminCalendar(importData) {
+    return this.request('/admin/calendar/import', {
+      method: 'POST',
+      body: JSON.stringify(importData),
     });
   }
 

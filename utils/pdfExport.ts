@@ -1,159 +1,260 @@
-import { Enterprise, FiscalObligation, StatusObligation } from '@/types/fiscal';
+import { FiscalCalendarEntry } from '@/types/fiscal';
 
-export interface ComplianceReport {
-  enterprise: Enterprise;
-  obligations: FiscalObligation[];
-  period: {
-    start: Date;
-    end: Date;
-  };
-  summary: {
-    total: number;
-    completed: number;
-    pending: number;
-    overdue: number;
-    complianceRate: number;
-  };
+export interface FiscalReport {
+  title: string;
+  period: string;
+  entries: FiscalCalendarEntry[];
+  generatedAt: Date;
 }
 
-export const generateComplianceReport = (
-  enterprise: Enterprise,
-  obligations: FiscalObligation[],
-  startDate: Date,
-  endDate: Date
-): ComplianceReport => {
-  const filteredObligations = obligations.filter(
-    obligation => 
-      obligation.enterpriseId === enterprise.id &&
-      obligation.dueDate >= startDate &&
-      obligation.dueDate <= endDate
-  );
-
-  const total = filteredObligations.length;
-  const completed = filteredObligations.filter(o => o.status === StatusObligation.COMPLETED).length;
-  const pending = filteredObligations.filter(o => o.status === StatusObligation.PENDING).length;
-  const overdue = filteredObligations.filter(o => o.status === StatusObligation.OVERDUE).length;
-  const complianceRate = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-  return {
-    enterprise,
-    obligations: filteredObligations,
-    period: { start: startDate, end: endDate },
-    summary: {
-      total,
-      completed,
-      pending,
-      overdue,
-      complianceRate,
-    },
-  };
-};
-
-export const exportComplianceReportPDF = async (report: ComplianceReport): Promise<string> => {
-  // Cette fonction simule l'export PDF
-  // Dans une vraie application, vous utiliseriez une bibliothèque comme react-native-html-to-pdf
-  // ou expo-print pour générer le PDF
+// Generate HTML content for fiscal calendar report
+export const generateFiscalCalendarReportHTML = (report: FiscalReport): string => {
+  const formatDate = (date: Date) => date.toLocaleDateString('fr-FR');
   
-  const pdfContent = `
+  const entriesHTML = report.entries.map(entry => `
+    <tr>
+      <td>${entry.id}</td>
+      <td>${entry.categorie_personnes}</td>
+      <td>${entry.sous_categorie || '-'}</td>
+      <td>${entry.type}</td>
+      <td>${entry.tag}</td>
+      <td>${entry.frequence_declaration}</td>
+      <td>${entry.periode_declaration || '-'}</td>
+      <td>${entry.mois || '-'}</td>
+      <td>${entry.jours || '-'}</td>
+      <td>${entry.detail_declaration || '-'}</td>
+      <td>${entry.formulaire || '-'}</td>
+    </tr>
+  `).join('');
+
+  return `
     <!DOCTYPE html>
     <html>
     <head>
-      <meta charset="utf-8">
-      <title>Rapport de Conformité Fiscale</title>
+      <meta charset="UTF-8">
+      <title>${report.title}</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .header { text-align: center; margin-bottom: 30px; }
-        .company-info { margin-bottom: 20px; }
-        .summary { margin-bottom: 30px; }
-        .obligations-table { width: 100%; border-collapse: collapse; }
-        .obligations-table th, .obligations-table td { 
-          border: 1px solid #ddd; padding: 8px; text-align: left; 
+        body {
+          font-family: Arial, sans-serif;
+          margin: 20px;
+          color: #333;
         }
-        .obligations-table th { background-color: #f2f2f2; }
-        .status-completed { color: green; }
-        .status-pending { color: orange; }
-        .status-overdue { color: red; }
+        .header {
+          text-align: center;
+          margin-bottom: 30px;
+          border-bottom: 2px solid #3B82F6;
+          padding-bottom: 20px;
+        }
+        .title {
+          font-size: 24px;
+          font-weight: bold;
+          color: #1E293B;
+          margin-bottom: 10px;
+        }
+        .subtitle {
+          font-size: 16px;
+          color: #64748B;
+        }
+        .report-info {
+          margin-bottom: 30px;
+          padding: 15px;
+          background-color: #F8FAFC;
+          border-radius: 8px;
+        }
+        .info-row {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 8px;
+        }
+        .info-label {
+          font-weight: bold;
+          color: #374151;
+        }
+        .info-value {
+          color: #6B7280;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 20px;
+          font-size: 12px;
+        }
+        th, td {
+          border: 1px solid #E5E7EB;
+          padding: 8px;
+          text-align: left;
+        }
+        th {
+          background-color: #F3F4F6;
+          font-weight: bold;
+          color: #374151;
+        }
+        tr:nth-child(even) {
+          background-color: #F9FAFB;
+        }
+        .footer {
+          margin-top: 30px;
+          text-align: center;
+          color: #6B7280;
+          font-size: 12px;
+        }
+        .summary {
+          margin-bottom: 20px;
+          padding: 15px;
+          background-color: #EFF6FF;
+          border-radius: 8px;
+          border-left: 4px solid #3B82F6;
+        }
+        .summary-title {
+          font-weight: bold;
+          color: #1E40AF;
+          margin-bottom: 10px;
+        }
+        .summary-stats {
+          display: flex;
+          gap: 20px;
+        }
+        .stat-item {
+          text-align: center;
+        }
+        .stat-number {
+          font-size: 18px;
+          font-weight: bold;
+          color: #1E40AF;
+        }
+        .stat-label {
+          font-size: 12px;
+          color: #6B7280;
+        }
       </style>
     </head>
     <body>
       <div class="header">
-        <h1>Rapport de Conformité Fiscale</h1>
-        <h2>Agenda Fiscal Marocain</h2>
+        <div class="title">${report.title}</div>
+        <div class="subtitle">Calendrier Fiscal - Période: ${report.period}</div>
       </div>
-      
-      <div class="company-info">
-        <h3>Informations de l'entreprise</h3>
-        <p><strong>Raison sociale:</strong> ${report.enterprise.raisonSociale}</p>
-        <p><strong>Identifiant fiscal:</strong> ${report.enterprise.identifiantFiscal}</p>
-        <p><strong>Forme juridique:</strong> ${report.enterprise.formeJuridique}</p>
-        <p><strong>Régime fiscal:</strong> ${report.enterprise.regimeFiscal}</p>
-        <p><strong>Période:</strong> ${report.period.start.toLocaleDateString('fr-FR')} - ${report.period.end.toLocaleDateString('fr-FR')}</p>
+
+      <div class="report-info">
+        <div class="info-row">
+          <span class="info-label">Période:</span>
+          <span class="info-value">${report.period}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Nombre d'entrées:</span>
+          <span class="info-value">${report.entries.length}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Généré le:</span>
+          <span class="info-value">${formatDate(report.generatedAt)}</span>
+        </div>
       </div>
-      
+
       <div class="summary">
-        <h3>Résumé de conformité</h3>
-        <p><strong>Taux de conformité:</strong> ${report.summary.complianceRate}%</p>
-        <p><strong>Total des obligations:</strong> ${report.summary.total}</p>
-        <p><strong>Obligations terminées:</strong> ${report.summary.completed}</p>
-        <p><strong>Obligations en attente:</strong> ${report.summary.pending}</p>
-        <p><strong>Obligations en retard:</strong> ${report.summary.overdue}</p>
+        <div class="summary-title">Résumé par catégorie</div>
+        <div class="summary-stats">
+          ${generateSummaryStats(report.entries)}
+        </div>
       </div>
-      
-      <div class="obligations">
-        <h3>Détail des obligations</h3>
-        <table class="obligations-table">
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Titre</th>
-              <th>Date d'échéance</th>
-              <th>Statut</th>
-              <th>Catégorie</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${report.obligations.map(obligation => `
-              <tr>
-                <td>${obligation.type}</td>
-                <td>${obligation.title}</td>
-                <td>${obligation.dueDate.toLocaleDateString('fr-FR')}</td>
-                <td class="status-${obligation.status.toLowerCase().replace(' ', '-')}">${obligation.status}</td>
-                <td>${obligation.category}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-      
-      <div style="margin-top: 30px; text-align: center; font-size: 12px; color: #666;">
-        <p>Rapport généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</p>
-        <p>Agenda Fiscal Marocain - Application de gestion des échéances fiscales</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Catégorie</th>
+            <th>Sous-Catégorie</th>
+            <th>Type</th>
+            <th>Tag</th>
+            <th>Fréquence</th>
+            <th>Période</th>
+            <th>Mois</th>
+            <th>Jours</th>
+            <th>Détail</th>
+            <th>Formulaire</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entriesHTML}
+        </tbody>
+      </table>
+
+      <div class="footer">
+        <p>Rapport généré automatiquement par Agenda Fiscal</p>
+        <p>© ${new Date().getFullYear()} - Tous droits réservés</p>
       </div>
     </body>
     </html>
   `;
-
-  // Simuler la génération du PDF
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve('rapport_conformite_' + report.enterprise.identifiantFiscal + '_' + 
-             report.period.start.toISOString().split('T')[0] + '.pdf');
-    }, 1000);
-  });
 };
 
-export const shareComplianceReport = async (report: ComplianceReport): Promise<void> => {
-  try {
-    const fileName = await exportComplianceReportPDF(report);
-    
-    // Dans une vraie application, vous utiliseriez expo-sharing pour partager le fichier
-    console.log(`Rapport exporté: ${fileName}`);
-    
-    // Simuler le partage
-    alert(`Rapport de conformité exporté avec succès: ${fileName}`);
-  } catch (error) {
-    console.error('Erreur lors de l\'export du rapport:', error);
-    alert('Erreur lors de l\'export du rapport');
-  }
+// Generate summary statistics for the report
+const generateSummaryStats = (entries: FiscalCalendarEntry[]): string => {
+  const byCategory: Record<string, number> = {};
+  const byType: Record<string, number> = {};
+  const byTag: Record<string, number> = {};
+
+  entries.forEach(entry => {
+    byCategory[entry.categorie_personnes] = (byCategory[entry.categorie_personnes] || 0) + 1;
+    byType[entry.type] = (byType[entry.type] || 0) + 1;
+    byTag[entry.tag] = (byTag[entry.tag] || 0) + 1;
+  });
+
+  const topCategory = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0];
+  const topType = Object.entries(byType).sort((a, b) => b[1] - a[1])[0];
+  const topTag = Object.entries(byTag).sort((a, b) => b[1] - a[1])[0];
+
+  return `
+    <div class="stat-item">
+      <div class="stat-number">${topCategory ? topCategory[1] : 0}</div>
+      <div class="stat-label">${topCategory ? topCategory[0] : 'Aucune'}</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number">${topType ? topType[1] : 0}</div>
+      <div class="stat-label">${topType ? topType[0] : 'Aucun'}</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number">${topTag ? topTag[1] : 0}</div>
+      <div class="stat-label">${topTag ? topTag[0] : 'Aucun'}</div>
+    </div>
+  `;
+};
+
+// Generate a simple text report
+export const generateFiscalCalendarTextReport = (report: FiscalReport): string => {
+  const formatDate = (date: Date) => date.toLocaleDateString('fr-FR');
+  
+  let text = `${report.title}\n`;
+  text += `Période: ${report.period}\n`;
+  text += `Généré le: ${formatDate(report.generatedAt)}\n`;
+  text += `Nombre d'entrées: ${report.entries.length}\n\n`;
+  
+  text += 'Résumé par catégorie:\n';
+  const byCategory: Record<string, number> = {};
+  report.entries.forEach(entry => {
+    byCategory[entry.categorie_personnes] = (byCategory[entry.categorie_personnes] || 0) + 1;
+  });
+  
+  Object.entries(byCategory).forEach(([category, count]) => {
+    text += `  - ${category}: ${count} entrée(s)\n`;
+  });
+  
+  text += '\nDétail des entrées:\n';
+  text += '='.repeat(80) + '\n';
+  
+  report.entries.forEach(entry => {
+    text += `ID: ${entry.id}\n`;
+    text += `Catégorie: ${entry.categorie_personnes}\n`;
+    if (entry.sous_categorie) text += `Sous-catégorie: ${entry.sous_categorie}\n`;
+    text += `Type: ${entry.type}\n`;
+    text += `Tag: ${entry.tag}\n`;
+    text += `Fréquence: ${entry.frequence_declaration}\n`;
+    if (entry.periode_declaration) text += `Période: ${entry.periode_declaration}\n`;
+    if (entry.mois && entry.jours) text += `Échéance: ${entry.jours}/${entry.mois}\n`;
+    if (entry.detail_declaration) text += `Détail: ${entry.detail_declaration}\n`;
+    if (entry.formulaire) text += `Formulaire: ${entry.formulaire}\n`;
+    if (entry.commentaire) text += `Commentaire: ${entry.commentaire}\n`;
+    text += '-'.repeat(40) + '\n';
+  });
+  
+  return text;
 };
 

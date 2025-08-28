@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from 'rea
 import { X, Calendar, ChevronLeft, ChevronRight, Download, Filter } from 'lucide-react-native';
 import { Enterprise, FiscalObligation, TypeObligation } from '@/types/fiscal';
 import { generateFiscalObligations, getObligationColor } from '@/utils/fiscalCalculations';
-import ObligationCard from './ObligationCard';
+import FiscalEntryCard from './ObligationCard';
 
 interface EnterpriseCalendarModalProps {
   visible: boolean;
@@ -85,7 +85,7 @@ export default function EnterpriseCalendarModal({
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.title}>Calendrier Fiscal</Text>
-            <Text style={styles.subtitle}>{enterprise.raisonSociale}</Text>
+            <Text style={styles.subtitle}>{enterprise.nom}</Text>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <X size={24} color="#6B7280" />

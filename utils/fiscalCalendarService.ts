@@ -19,9 +19,9 @@ export interface FiscalCalendarItem {
 }
 
 export class FiscalCalendarService {
-  // Check if we're in demo mode
+  // Check if we're in demo mode - disabled for production
   private static isDemoMode(): boolean {
-    return process.env.NODE_ENV === 'development' || process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
+    return false; // Always require real authentication in production
   }
 
   // Get fiscal calendar data with optional filters
@@ -42,7 +42,7 @@ export class FiscalCalendarService {
       if (filters?.type_impot) queryParams.append('type_impot', filters.type_impot);
       if (filters?.is_tva_assujetti !== undefined) queryParams.append('is_tva_assujetti', filters.is_tva_assujetti.toString());
 
-      const response = await apiProxy.get(`/api/v1/fiscal/calendar?${queryParams.toString()}`);
+      const response = await apiProxy.get(`/fiscal/calendar?${queryParams.toString()}`);
       return response.data;
     } catch (error) {
       console.error('Error fetching fiscal calendar:', error);
@@ -57,7 +57,7 @@ export class FiscalCalendarService {
     }
 
     try {
-      const response = await apiProxy.get('/api/v1/fiscal/calendar/categories');
+      const response = await apiProxy.get('/fiscal/calendar/categories');
       return response.data;
     } catch (error) {
       console.error('Error fetching categories:', error);
@@ -72,7 +72,7 @@ export class FiscalCalendarService {
     }
 
     try {
-      const response = await apiProxy.get(`/api/v1/fiscal/calendar/subcategories/${encodeURIComponent(category)}`);
+      const response = await apiProxy.get(`/fiscal/calendar/subcategories/${encodeURIComponent(category)}`);
       return response.data;
     } catch (error) {
       console.error('Error fetching sub-categories:', error);
@@ -87,7 +87,7 @@ export class FiscalCalendarService {
     }
 
     try {
-      const response = await apiProxy.get('/api/v1/fiscal/calendar/tva');
+      const response = await apiProxy.get('/fiscal/calendar/tva');
       return response.data;
     } catch (error) {
       console.error('Error fetching TVA obligations:', error);
@@ -108,7 +108,7 @@ export class FiscalCalendarService {
     }
 
     try {
-      const response = await apiProxy.post('/api/v1/fiscal/calendar', entry);
+      const response = await apiProxy.post('/fiscal/calendar', entry);
       return response.data;
     } catch (error) {
       console.error('Error creating fiscal calendar entry:', error);
@@ -128,7 +128,7 @@ export class FiscalCalendarService {
     }
 
     try {
-      const response = await apiProxy.put(`/api/v1/fiscal/calendar/${id}`, entry);
+      const response = await apiProxy.put(`/fiscal/calendar/${id}`, entry);
       return response.data;
     } catch (error) {
       console.error('Error updating fiscal calendar entry:', error);
@@ -144,7 +144,7 @@ export class FiscalCalendarService {
     }
 
     try {
-      await apiProxy.delete(`/api/v1/fiscal/calendar/${id}`);
+      await apiProxy.delete(`/fiscal/calendar/${id}`);
     } catch (error) {
       console.error('Error deleting fiscal calendar entry:', error);
       throw error;

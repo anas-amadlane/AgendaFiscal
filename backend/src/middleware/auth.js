@@ -3,10 +3,13 @@ const { getOne } = require('../config/database');
 
 // JWT token verification middleware
 const authenticateToken = async (req, res, next) => {
+  console.log('🔒 Authentication middleware called for:', req.method, req.path);
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  console.log('🔒 Authorization header:', authHeader ? 'Present' : 'Missing');
 
   if (!token) {
+    console.log('🚨 No token provided - blocking access');
     return res.status(401).json({ 
       error: 'Access token required',
       message: 'Veuillez vous connecter pour accéder à cette ressource'
@@ -162,7 +165,7 @@ const validateSession = async (req, res, next) => {
 
   try {
     const session = await getOne(
-      'SELECT * FROM user_sessions WHERE user_id = $1 AND session_token = $2 AND expires_at > NOW()',
+      'SELECT * FROM user_sessions WHERE user_id = $1 AND session_token = $2 AND expire > NOW()',
       [req.user.id, req.headers['x-session-token']]
     );
 

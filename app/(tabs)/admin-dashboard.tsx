@@ -153,12 +153,16 @@ export default function AdminDashboard() {
     setRefreshing(false);
   };
 
-  // Test function to call API without authentication
+  // Test function to call API with authentication
   const testAPIConnection = async () => {
     try {
       console.log('🔍 Testing API connection...');
+      const token = localStorage.getItem('authToken');
+      console.log('🔍 Test: Using token:', token ? 'Present' : 'Missing');
+      
       const response = await fetch('http://localhost:3001/api/v1/admin/dashboard', {
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
@@ -179,6 +183,47 @@ export default function AdminDashboard() {
   const navigateToUsers = () => router.push('/(tabs)/admin-users');
   const navigateToCalendar = () => router.push('/(tabs)/admin-calendar');
   const navigateToCompanies = () => router.push('/(tabs)/admin-companies');
+
+  const generateObligationsForAllCompanies = async () => {
+    try {
+      if (!user?.email) {
+        setError('User email not found');
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      const token = localStorage.getItem('authToken');
+      const response = await fetch('http://localhost:3001/api/v1/fiscal/obligations/generate/all-companies-dynamic', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          managerEmail: user.email
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to generate obligations');
+      }
+
+      const result = await response.json();
+      console.log('Obligations generation result:', result);
+      
+      // Show success message
+      alert(`Successfully generated obligations!\n\nTotal companies: ${result.data.totalCompanies}\nCompanies with obligations: ${result.data.companiesWithObligations}\nTotal obligations: ${result.data.totalObligations}`);
+      
+    } catch (error) {
+      console.error('Error generating obligations:', error);
+      setError(error instanceof Error ? error.message : 'Failed to generate obligations');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (user?.role !== 'admin') {
     return null;
@@ -325,6 +370,22 @@ export default function AdminDashboard() {
             </View>
           </View>
         ))}
+      </View>
+
+      {/* Fiscal Obligations Generation */}
+      <View style={styles.obligationsContainer}>
+        <Text style={styles.sectionTitle}>Fiscal Obligations Management</Text>
+        <View style={styles.obligationsCard}>
+          <Text style={styles.obligationsDescription}>
+            Generate fiscal obligations for all companies based on the fiscal calendar. This will create obligations for the current year plus 12 months forward.
+          </Text>
+          <TouchableOpacity 
+            style={styles.generateButton} 
+            onPress={generateObligationsForAllCompanies}
+          >
+            <Text style={styles.generateButtonText}>Generate Dynamic Obligations</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </ScrollView>
   );
@@ -539,6 +600,37 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#991B1B',
     fontSize: 13,
+    fontWeight: '600',
+  },
+  obligationsContainer: {
+    padding: 20,
+  },
+  obligationsCard: {
+    backgroundColor: '#FFFFFF',
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  obligationsDescription: {
+    fontSize: 14,
+    color: '#64748B',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  generateButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  generateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '600',
   },
 });

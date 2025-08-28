@@ -88,13 +88,17 @@ export default function Enterprises() {
     // Convert CompanyWithRole to Enterprise format for the modal
     const enterpriseForModal: Enterprise = {
       id: enterprise.id,
-      raisonSociale: enterprise.name,
-      identifiantFiscal: enterprise.registrationNumber || enterprise.taxId || '',
+      nom: enterprise.name,
       formeJuridique: FormeJuridique.SARL, // Default value for demo
-      regimeFiscal: RegimeFiscal.IS_TVA, // Default value for demo
+      regimeFiscal: RegimeFiscal.IS, // Default value for demo
       secteurActivite: 'Technologie', // Default value for demo
-      dateCreation: enterprise.createdAt,
-      isActive: enterprise.status === 'active',
+      adresse: enterprise.address || '',
+      telephone: enterprise.phone || '',
+      email: enterprise.email || '',
+      siret: enterprise.registrationNumber || '',
+      tva: enterprise.taxId || '',
+      created_at: enterprise.createdAt,
+      updated_at: enterprise.updatedAt
     };
     setSelectedEnterprise(enterpriseForModal);
     setShowDetailsModal(true);

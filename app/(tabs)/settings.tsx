@@ -1,23 +1,30 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, Moon, Globe, Shield, Download, Upload, CircleHelp as HelpCircle, Mail, Info, ChevronRight, Search, MoveHorizontal as MoreHorizontal, User, LogOut, CreditCard as Edit3, Users, Sun, Languages } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { router } from 'expo-router';
+import { LogoutUtils } from '@/utils/logoutUtils';
 import AgentManagementModal from '@/components/AgentManagementModal';
-import UserManagementModal from '@/components/UserManagementModal';
 import RoleBadge from '@/components/RoleBadge';
 import AppHeader from '@/components/AppHeader';
 import { UserRole } from '@/types/auth';
 import { defaultNotificationSettings, NotificationSettings } from '@/utils/notificationService';
 
 export default function SettingsScreen() {
-  const { user, logout, updateProfile, isAuthenticated, isLoading } = useAuth();
+  const { user, logout, isAuthenticated, isLoading } = useAuth();
   const { theme, strings, isRTL, toggleTheme, setLanguage, language } = useApp();
   const [showAgentManagement, setShowAgentManagement] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(defaultNotificationSettings);
+  
+  console.log('🔍 Settings: Component rendered, user:', user?.email);
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(defaultNotificationSettings || {
+    pushNotifications: true,
+    emailNotifications: true,
+    soundEnabled: true,
+    reminderDays: 7
+  });
   const [preferences, setPreferences] = useState({
     autoSync: true,
     biometricAuth: false
@@ -43,21 +50,44 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    if (confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
-      performLogout();
-    }
+    console.log('🔍 Settings: handleLogout called - BUTTON PRESSED!');
+    console.log('🔍 Settings: User state:', user);
+    console.log('🔍 Settings: isAuthenticated:', isAuthenticated);
+    
+    // Direct logout without confirmation for testing
+    console.log('🔍 Settings: Starting direct logout...');
+    performLogout();
   };
 
   const performLogout = async () => {
+    console.log('🔍 Settings: performLogout called');
+    
     try {
-      await logout();
+      // First, perform complete cleanup using LogoutUtils
+      console.log('🔍 Settings: performing complete logout cleanup...');
+      LogoutUtils.performCompleteLogout();
       
-      // Add a fallback redirect after a short delay
-      setTimeout(() => {
-        router.replace('/(auth)/login');
-      }, 200);
+      // Then call AuthContext logout for state management
+      console.log('🔍 Settings: calling logout from AuthContext...');
+      await logout();
+      console.log('🔍 Settings: logout completed successfully');
+      
+      // Force redirect to login page
+      console.log('🔍 Settings: redirecting to login page...');
+      router.replace('/(auth)/login');
+      
     } catch (error) {
-      alert('Erreur lors de la déconnexion. Veuillez réessayer.');
+      console.error('❌ Settings: logout error:', error);
+      
+      // Even if there's an error, force logout and redirect
+      console.log('🔍 Settings: forcing logout despite error...');
+      LogoutUtils.performCompleteLogout();
+      
+      // Force redirect to login page
+      setTimeout(() => {
+        console.log('🔍 Settings: force redirecting to login...');
+        router.replace('/(auth)/login');
+      }, 100);
     }
   };
 
@@ -109,18 +139,29 @@ export default function SettingsScreen() {
     onPress: () => void;
     showArrow?: boolean;
     rightElement?: React.ReactNode;
-  }) => (
-    <TouchableOpacity style={styles.settingItem} onPress={onPress}>
-      <View style={styles.settingIcon}>
-        <Icon size={20} color="#64748B" />
-      </View>
-      <View style={styles.settingContent}>
-        <Text style={styles.settingTitle}>{title}</Text>
-        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
-      </View>
-      {rightElement || (showArrow && <ChevronRight size={20} color="#64748B" />)}
-    </TouchableOpacity>
-  );
+  }) => {
+    const handlePress = () => {
+      console.log(`🔍 Settings: SettingItem pressed for "${title}"`);
+      onPress();
+    };
+    
+    return (
+      <TouchableOpacity 
+        style={styles.settingItem} 
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        <View style={styles.settingIcon}>
+          <Icon size={20} color="#64748B" />
+        </View>
+        <View style={styles.settingContent}>
+          <Text style={styles.settingTitle}>{title}</Text>
+          {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+        </View>
+        {rightElement || (showArrow && <ChevronRight size={20} color="#64748B" />)}
+      </TouchableOpacity>
+    );
+  };
 
   const styles = createStyles(theme, isRTL);
 
@@ -189,9 +230,7 @@ export default function SettingsScreen() {
                   <View style={styles.profileRoleContainer}>
                     {user?.role && <RoleBadge role={user.role} size="small" />}
                   </View>
-                  {user?.company && (
-                    <Text style={[styles.profileCompany, { color: theme.colors.primary }]}>{user.company}</Text>
-                  )}
+                  {/* Company info removed - not available in User interface */}
                 </View>
                 <TouchableOpacity style={[styles.editButton, { backgroundColor: theme.colors.primaryContainer }]} onPress={handleEditProfile}>
                   <Edit3 size={16} color={theme.colors.primary} />
@@ -383,11 +422,11 @@ export default function SettingsScreen() {
         onClose={() => setShowAgentManagement(false)}
       />
 
-      {/* User Management Modal */}
-      <UserManagementModal
+      {/* User Management Modal - disabled due to missing props */}
+      {/* <UserManagementModal
         visible={showUserManagement}
         onClose={() => setShowUserManagement(false)}
-      />
+      /> */}
     </SafeAreaView>
   );
 }

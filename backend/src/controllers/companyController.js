@@ -1,6 +1,8 @@
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { query, getOne, getMany, transaction } = require('../config/database');
+const companyCalendarService = require('../services/companyCalendarService');
+const automatedObligationService = require('../services/automatedObligationService');
 
 // Get all companies (admin only)
 const getAllCompanies = async (req, res) => {
@@ -14,7 +16,7 @@ const getAllCompanies = async (req, res) => {
 
     if (search) {
       paramCount++;
-      whereClause += ` AND (c.name ILIKE $${paramCount} OR c.registration_number ILIKE $${paramCount} OR c.tax_id ILIKE $${paramCount})`;
+      whereClause += ` AND c.name ILIKE $${paramCount}`;
       params.push(`%${search}%`);
     }
 
@@ -45,7 +47,7 @@ const getAllCompanies = async (req, res) => {
        LEFT JOIN users u ON c.created_by = u.id
        LEFT JOIN company_user_roles cur ON c.id = cur.company_id
        ${whereClause}
-       GROUP BY c.id, c.name, c.registration_number, c.tax_id, c.status, c.created_at, c.updated_at, u.first_name, u.last_name
+       GROUP BY c.id, c.name, c.status, c.created_at, c.updated_at, u.first_name, u.last_name
        ORDER BY c.created_at DESC
        LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
       [...params, limit, offset]
@@ -55,8 +57,6 @@ const getAllCompanies = async (req, res) => {
       companies: companies.map(company => ({
         id: company.id,
         name: company.name,
-        registrationNumber: company.registration_number,
-        taxId: company.tax_id,
         status: company.status,
         createdAt: company.created_at,
         updatedAt: company.updated_at,
@@ -138,8 +138,6 @@ const getAdminCompanyDetails = async (req, res) => {
       company: {
         id: company.id,
         name: company.name,
-        registrationNumber: company.registration_number,
-        taxId: company.tax_id,
         status: company.status,
         createdAt: company.created_at,
         updatedAt: company.updated_at,
@@ -232,7 +230,7 @@ const updateCompanyAdmin = async (req, res) => {
 
     // Build update query
     const fields = Object.keys(updateData).filter(key => 
-      ['name', 'registration_number', 'tax_id', 'address', 'phone', 'email', 'website', 'industry', 'size', 'status'].includes(key)
+      ['name', 'categorie_personnes', 'sous_categorie', 'is_tva_assujetti', 'regime_tva', 'prorata_deduction', 'status'].includes(key)
     );
 
     if (fields.length === 0) {
@@ -271,16 +269,31 @@ const updateCompanyAdmin = async (req, res) => {
 // Create a new company
 const createCompany = async (req, res) => {
   try {
-    const { name, registrationNumber, taxId, address, phone, email, website, industry, size, userRole, managerEmail } = req.body;
+    const { 
+      name, 
+      userRole, 
+      managerEmail,
+      categoriePersonnes,
+      sousCategorie,
+      isTvaAssujetti,
+      regimeTva,
+      prorataDdeduction
+    } = req.body;
     const userId = req.user.id;
 
     const result = await transaction(async (client) => {
       // Create the company
       const companyResult = await client.query(`
-        INSERT INTO companies (name, registration_number, tax_id, address, phone, email, website, industry, size, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO companies (
+          name, categorie_personnes, sous_categorie, is_tva_assujetti, 
+          regime_tva, prorata_deduction, created_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
-      `, [name, registrationNumber, taxId, address, phone, email, website, industry, size, userId]);
+      `, [
+        name, categoriePersonnes, sousCategorie, 
+        isTvaAssujetti, regimeTva, prorataDdeduction, userId
+      ]);
 
       const company = companyResult.rows[0];
 
@@ -289,7 +302,7 @@ const createCompany = async (req, res) => {
         // User becomes the manager of the company
         await client.query(`
           INSERT INTO company_user_roles (company_id, user_id, role, assigned_by, status)
-          VALUES ($1, $2, 'manager', $1, 'active')
+          VALUES ($1, $2, 'manager', $2, 'active')
         `, [company.id, userId]);
 
       } else if (userRole === 'agent' && managerEmail) {
@@ -337,6 +350,24 @@ const createCompany = async (req, res) => {
       return company;
     });
 
+    // Assign calendar entries to the newly created company
+    try {
+      const calendarAssignments = await companyCalendarService.assignCalendarToCompany(result.id, userId);
+      console.log(`📅 Calendar assigned to company ${result.name}: ${calendarAssignments.length} obligations created`);
+    } catch (calendarError) {
+      console.error('Warning: Failed to assign calendar to company:', calendarError);
+      // Don't fail the company creation if calendar assignment fails
+    }
+
+    // Trigger automated obligation generation for the new company
+    try {
+      await automatedObligationService.triggerNewCompanyGeneration(result.id, userId);
+      console.log(`✅ Automated obligation generation triggered for new company: ${result.name}`);
+    } catch (obligationError) {
+      console.error('Warning: Failed to generate obligations for new company:', obligationError);
+      // Don't fail the company creation if obligation generation fails
+    }
+
     res.status(201).json({
       message: 'Company created successfully',
       company: result
@@ -344,6 +375,13 @@ const createCompany = async (req, res) => {
 
   } catch (error) {
     console.error('Error creating company:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      detail: error.detail,
+      hint: error.hint,
+      where: error.where
+    });
     
     if (error.code === '23505') { // Unique violation
       return res.status(400).json({
@@ -354,7 +392,8 @@ const createCompany = async (req, res) => {
 
     res.status(500).json({
       error: 'Internal server error',
-      message: 'Error creating company'
+      message: 'Error creating company',
+      details: error.message
     });
   }
 };
@@ -534,7 +573,7 @@ const updateCompany = async (req, res) => {
 
     // Build update query
     const fields = Object.keys(updateData).filter(key => 
-      ['name', 'registration_number', 'tax_id', 'address', 'phone', 'email', 'website', 'industry', 'size', 'status'].includes(key)
+      ['name', 'categorie_personnes', 'sous_categorie', 'is_tva_assujetti', 'regime_tva', 'prorata_deduction', 'status'].includes(key)
     );
 
     if (fields.length === 0) {
@@ -703,6 +742,27 @@ const removeUserFromCompany = async (req, res) => {
   }
 };
 
+// Assign calendar to all companies (admin only)
+const assignCalendarToAllCompanies = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const results = await companyCalendarService.assignCalendarToAllCompanies(userId);
+    
+    res.json({
+      message: 'Calendar assignment completed',
+      results: results
+    });
+    
+  } catch (error) {
+    console.error('Error assigning calendar to all companies:', error);
+    res.status(500).json({
+      error: 'Failed to assign calendar to companies',
+      message: 'Erreur lors de l\'assignation du calendrier aux entreprises'
+    });
+  }
+};
+
 module.exports = {
   createCompany,
   getUserCompanies,
@@ -713,5 +773,6 @@ module.exports = {
   getAllCompanies,
   getAdminCompanyDetails,
   updateCompanyStatus,
-  updateCompanyAdmin
+  updateCompanyAdmin,
+  assignCalendarToAllCompanies
 };

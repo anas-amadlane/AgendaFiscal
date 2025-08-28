@@ -39,8 +39,6 @@ export enum CompanyRole {
 export interface CompanyWithRole {
   id: string;
   name: string;
-  registrationNumber?: string;
-  taxId?: string;
   status: 'active' | 'inactive' | 'suspended';
   userRole: CompanyRole;
   userStatus: 'active' | 'inactive' | 'pending';

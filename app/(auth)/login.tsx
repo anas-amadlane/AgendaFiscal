@@ -1,15 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, router } from 'expo-router';
+import { Link, router, Redirect } from 'expo-router';
 import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { UserRole } from '@/types/auth';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { login, isLoading, error, clearError } = useAuth();
+  const { login, isLoading, error, clearError, isAuthenticated, user } = useAuth();
+
+  // Redirect already authenticated users to their appropriate dashboard
+  useEffect(() => {
+    if (isAuthenticated && user && !isLoading) {
+      console.log('🔍 Login page: User already authenticated, redirecting...');
+      if (user.role === UserRole.ADMIN) {
+        console.log('🔍 Login page: Redirecting admin to admin-dashboard');
+        router.replace('/(tabs)/admin-dashboard');
+      } else {
+        console.log('🔍 Login page: Redirecting regular user to dashboard');
+        router.replace('/(tabs)/dashboard');
+      }
+    }
+  }, [isAuthenticated, user, isLoading]);
+
+  // Handle error display
+  useEffect(() => {
+    if (error) {
+      console.log('Login error in UI:', error);
+      Alert.alert('Erreur de connexion', error);
+      clearError();
+    }
+  }, [error, clearError]);
 
   const handleLogin = async () => {
     console.log('Login form submitted');
@@ -34,13 +58,14 @@ export default function LoginScreen() {
     }
   };
 
-  React.useEffect(() => {
-    if (error) {
-      console.log('Login error in UI:', error);
-      Alert.alert('Erreur de connexion', error);
-      clearError();
+  // Show redirect for authenticated users
+  if (isAuthenticated && user && !isLoading) {
+    if (user.role === UserRole.ADMIN) {
+      return <Redirect href="/(tabs)/admin-dashboard" />;
+    } else {
+      return <Redirect href="/(tabs)/dashboard" />;
     }
-  }, [error]);
+  }
 
   return (
     <SafeAreaView style={styles.container}>

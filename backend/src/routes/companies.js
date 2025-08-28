@@ -8,17 +8,23 @@ const router = express.Router();
 // Validation middleware
 const validateCompany = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Company name must be between 2 and 100 characters'),
-  body('registrationNumber').optional().isLength({ min: 5, max: 50 }).withMessage('Registration number must be between 5 and 50 characters'),
-  body('taxId').optional().isLength({ min: 8, max: 20 }).withMessage('Tax ID must be between 8 and 20 characters'),
-  body('address').optional().isLength({ max: 200 }).withMessage('Address must be less than 200 characters'),
-  body('phone').optional().matches(/^[\+]?[0-9\s\-\(\)]+$/).withMessage('Invalid phone number format'),
-  body('email').optional().isEmail().withMessage('Invalid email format'),
-  body('website').optional().isURL().withMessage('Invalid website URL'),
-  body('industry').optional().isLength({ max: 100 }).withMessage('Industry must be less than 100 characters'),
-  body('size').optional().isIn(['small', 'medium', 'large', 'enterprise']).withMessage('Size must be small, medium, large, or enterprise'),
-  body('status').optional().isIn(['active', 'inactive']).withMessage('Status must be active or inactive'),
   body('userRole').optional().isIn(['manager', 'agent']).withMessage('User role must be manager or agent'),
-  body('managerEmail').optional().isEmail().withMessage('Invalid manager email format')
+  body('managerEmail').optional().custom((value) => {
+    if (value === '' || value === null || value === undefined) {
+      return true; // Allow empty/null values
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(value)) {
+      throw new Error('Invalid manager email format');
+    }
+    return true;
+  }).withMessage('Invalid manager email format'),
+  // Fiscal and legal information fields
+  body('categoriePersonnes').optional().isLength({ max: 100 }).withMessage('Categorie personnes must be less than 100 characters'),
+  body('sousCategorie').optional().isLength({ max: 100 }).withMessage('Sous categorie must be less than 100 characters'),
+  body('isTvaAssujetti').optional().isBoolean().withMessage('isTvaAssujetti must be a boolean'),
+  body('regimeTva').optional().isLength({ max: 50 }).withMessage('Regime TVA must be less than 50 characters'),
+  body('prorataDdeduction').optional().isBoolean().withMessage('Prorata deduction must be a boolean')
 ];
 
 const validateUserAssignment = [
@@ -91,5 +97,11 @@ router.post('/assign-user', validateUserAssignment, handleValidationErrors, comp
 
 // Remove user from company
 router.delete('/:companyId/users/:userId', companyController.removeUserFromCompany);
+
+// Admin route - Assign calendar to all companies
+router.post('/admin/assign-calendar', 
+  requireRole(['admin']), 
+  companyController.assignCalendarToAllCompanies
+);
 
 module.exports = router; 

@@ -62,7 +62,7 @@ const register = async (req, res) => {
     // Create session
     const sessionToken = uuidv4();
     await query(
-      `INSERT INTO user_sessions (user_id, session_token, refresh_token, ip_address, user_agent, expires_at)
+      `INSERT INTO user_sessions (user_id, session_token, refresh_token, ip_address, user_agent, expire)
        VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '7 days')`,
       [user.id, sessionToken, refreshToken, req.ip, req.get('User-Agent')]
     );
@@ -193,7 +193,7 @@ const login = async (req, res) => {
     // Create session
     const sessionToken = uuidv4();
     await query(
-      `INSERT INTO user_sessions (user_id, session_token, refresh_token, ip_address, user_agent, expires_at)
+      `INSERT INTO user_sessions (user_id, session_token, refresh_token, ip_address, user_agent, expire)
        VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '7 days')`,
       [user.id, sessionToken, refreshToken, req.ip, req.get('User-Agent')]
     );
@@ -232,24 +232,41 @@ const login = async (req, res) => {
 // Logout user
 const logout = async (req, res) => {
   try {
-    const sessionToken = req.headers['x-session-token'];
+    console.log('🔄 Logout request received for user:', req.user?.id);
     
+    const sessionToken = req.headers['x-session-token'];
+    const userId = req.user?.id;
+    
+    // Clear session from database
     if (sessionToken) {
+      console.log('🗑️ Deleting session with token:', sessionToken);
       await query(
         'DELETE FROM user_sessions WHERE session_token = $1',
         [sessionToken]
       );
     }
+    
+    // Also clear any sessions for this user (fallback)
+    if (userId) {
+      console.log('🗑️ Clearing all sessions for user:', userId);
+      await query(
+        'DELETE FROM user_sessions WHERE user_id = $1',
+        [userId]
+      );
+    }
 
+    console.log('✅ Logout successful for user:', userId);
     res.json({
+      success: true,
       message: 'Déconnexion réussie'
     });
 
   } catch (error) {
-    console.error('Logout error:', error);
-    res.status(500).json({
-      error: 'Logout failed',
-      message: 'Erreur lors de la déconnexion'
+    console.error('❌ Logout error:', error);
+    // Still return success even if session cleanup fails
+    res.json({
+      success: true,
+      message: 'Déconnexion réussie'
     });
   }
 };
@@ -295,7 +312,7 @@ const refreshToken = async (req, res) => {
     // Update session
     await query(
       `UPDATE user_sessions 
-       SET refresh_token = $1, expires_at = NOW() + INTERVAL '7 days'
+       SET refresh_token = $1, expire = NOW() + INTERVAL '7 days'
        WHERE user_id = $2 AND refresh_token = $3`,
       [newTokens.refreshToken, user.id, refreshToken]
     );
